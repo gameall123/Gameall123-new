@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ProductCard } from '@/components/ProductCard';
+import { ProductRecommendations } from '@/components/ProductRecommendations';
 import { CartSlideout } from '@/components/CartSlideout';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { Hero } from '@/components/Hero';
@@ -412,6 +413,29 @@ export default function Home() {
               </p>
             </motion.div>
           )}
+        </div>
+      </section>
+
+      {/* Product Recommendations */}
+      <section className="py-16 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ProductRecommendations
+            title="🎮 Consigliati per te"
+            subtitle="Scopri i giochi perfetti per il tuo stile di gioco"
+            limit={6}
+          />
+        </div>
+      </section>
+
+      {/* Trending Products */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ProductRecommendations
+            category="Azione"
+            title="🔥 Giochi d'Azione di Tendenza"
+            subtitle="I giochi d'azione più popolari del momento"
+            limit={4}
+          />
         </div>
       </section>
 
