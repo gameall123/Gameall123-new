@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { useCartStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
+import { useWishlist } from '@/hooks/use-wishlist';
 import { CartToast } from './CartToast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -28,6 +29,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Product } from '@shared/schema';
+import { Link } from 'wouter';
 
 interface ProductCardProps {
   product: Product;
@@ -38,7 +40,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
   const { isAuthenticated } = useAuth();
   const { addToCart } = useCartStore();
   const { toast } = useToast();
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  const { isInWishlist, toggleWishlist, isAddingToWishlist, isRemovingFromWishlist } = useWishlist();
   const [quantity, setQuantity] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -67,11 +69,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
       return;
     }
     
-    setIsWishlisted(!isWishlisted);
-    toast({
-      title: isWishlisted ? "Rimosso dalla Wishlist" : "Aggiunto alla Wishlist",
-      description: `${product.name} è stato ${isWishlisted ? 'rimosso dalla' : 'aggiunto alla'} wishlist.`,
-    });
+    toggleWishlist(product.id);
   };
 
   const handleShare = () => {
@@ -107,7 +105,8 @@ export function ProductCard({ product, index }: ProductCardProps) {
         whileHover={{ y: -5, transition: { duration: 0.2 } }}
         className="group cursor-pointer"
       >
-        <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-white dark:bg-gray-800">
+        <Link href={`/product/${product.id}`}>
+          <Card className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-white dark:bg-gray-800">
           <div className="relative aspect-square overflow-hidden bg-gray-100 dark:bg-gray-700">
             {/* Product Image */}
             <div className="relative w-full h-full">
@@ -145,10 +144,11 @@ export function ProductCard({ product, index }: ProductCardProps) {
                     handleWishlist();
                   }}
                   className={`bg-white/90 hover:bg-white shadow-lg transition-all duration-200 ${
-                    isWishlisted ? 'text-red-500' : 'text-gray-600'
+                    isInWishlist(product.id) ? 'text-red-500' : 'text-gray-600'
                   }`}
+                  disabled={isAddingToWishlist || isRemovingFromWishlist}
                 >
-                  <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-red-500' : ''}`} />
+                  <Heart className={`w-4 h-4 ${isInWishlist(product.id) ? 'fill-red-500' : ''}`} />
                 </Button>
                 <Button
                   variant="secondary"
@@ -246,9 +246,10 @@ export function ProductCard({ product, index }: ProductCardProps) {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+                  </CardContent>
+          </Card>
+        </Link>
+    </motion.div>
 
       {/* Product Detail Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -393,10 +394,11 @@ export function ProductCard({ product, index }: ProductCardProps) {
                   <Button
                     variant="outline"
                     onClick={handleWishlist}
-                    className={`flex-1 ${isWishlisted ? 'border-red-500 text-red-500' : ''}`}
+                    className={`flex-1 ${isInWishlist(product.id) ? 'border-red-500 text-red-500' : ''}`}
+                    disabled={isAddingToWishlist || isRemovingFromWishlist}
                   >
-                    <Heart className={`w-4 h-4 mr-2 ${isWishlisted ? 'fill-red-500' : ''}`} />
-                    {isWishlisted ? 'Nella Wishlist' : 'Aggiungi alla Wishlist'}
+                    <Heart className={`w-4 h-4 mr-2 ${isInWishlist(product.id) ? 'fill-red-500' : ''}`} />
+                    {isInWishlist(product.id) ? 'Nella Wishlist' : 'Aggiungi alla Wishlist'}
                   </Button>
                   <Button
                     variant="outline"

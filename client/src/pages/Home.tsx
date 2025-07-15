@@ -5,6 +5,8 @@ import { ProductCard } from '@/components/ProductCard';
 import { CartSlideout } from '@/components/CartSlideout';
 import { CheckoutModal } from '@/components/CheckoutModal';
 import { Hero } from '@/components/Hero';
+import { ProductRecommendations } from '@/components/ProductRecommendations';
+import { ProductFilters } from '@/components/ProductFilters';
 
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { Badge } from '@/components/ui/badge';
@@ -412,6 +414,14 @@ export default function Home() {
               </p>
             </motion.div>
           )}
+        </div>
+      </section>
+
+      {/* Recommendations Section */}
+      <section className="py-12 bg-gray-50 dark:bg-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <ProductRecommendations type="trending" limit={8} />
+          <ProductRecommendations type="personalized" limit={8} />
         </div>
       </section>
 

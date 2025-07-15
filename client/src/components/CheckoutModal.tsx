@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CouponSection } from './CouponSection';
 import { 
   CreditCard, 
   MapPin, 
@@ -33,6 +34,10 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discount: number;
+  } | null>(null);
 
   const [formData, setFormData] = useState({
     firstName: user?.firstName || '',
@@ -55,6 +60,14 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
     });
   };
 
+  const handleCouponApplied = (discount: number, couponCode: string) => {
+    setAppliedCoupon({ code: couponCode, discount });
+  };
+
+  const handleCouponRemoved = () => {
+    setAppliedCoupon(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
@@ -64,7 +77,11 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Create order with proper total and items (including VAT)
-      const totalWithVAT = getTotalPrice() * 1.22;
+      const subtotal = getTotalPrice();
+  const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
+  const discountedSubtotal = subtotal - discountAmount;
+  const vatAmount = discountedSubtotal * 0.22;
+  const totalWithVAT = discountedSubtotal + vatAmount;
       const orderData = {
         total: totalWithVAT.toString(),
         status: 'pending',
@@ -347,7 +364,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
                               <span>Elaborazione...</span>
                             </div>
                           ) : (
-                            `Paga €${getTotalPrice().toFixed(2)}`
+                            `Paga €${totalWithVAT.toFixed(2)}`
                           )}
                         </Button>
                       </div>
@@ -439,23 +456,39 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
                 
                 <Separator />
                 
+                {/* Coupon Section */}
+                <CouponSection
+                  totalAmount={subtotal}
+                  onCouponApplied={handleCouponApplied}
+                  onCouponRemoved={handleCouponRemoved}
+                  appliedCoupon={appliedCoupon}
+                />
+                
+                <Separator />
+                
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Subtotale</span>
-                    <span>€{getTotalPrice().toFixed(2)}</span>
+                    <span>€{subtotal.toFixed(2)}</span>
                   </div>
+                  {appliedCoupon && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Sconto ({appliedCoupon.code})</span>
+                      <span>-€{appliedCoupon.discount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span>Spedizione</span>
                     <span className="text-green-600">Gratuita</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>IVA (22%)</span>
-                    <span>€{(getTotalPrice() * 0.22).toFixed(2)}</span>
+                    <span>€{vatAmount.toFixed(2)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between text-lg font-bold">
                     <span>Totale</span>
-                    <span className="text-blue-600">€{(getTotalPrice() * 1.22).toFixed(2)}</span>
+                    <span className="text-blue-600">€{totalWithVAT.toFixed(2)}</span>
                   </div>
                 </div>
               </CardContent>

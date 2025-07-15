@@ -14,6 +14,7 @@ import OrdersPage from "@/pages/OrdersPage";
 import Settings from "@/pages/Settings";
 import Wishlist from "@/pages/Wishlist";
 import AuthPage from "@/pages/auth-page";
+import ProductDetail from "@/pages/ProductDetail";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CartSlideout } from "@/components/CartSlideout";
@@ -37,6 +38,7 @@ function Router() {
         <Switch>
           <Route path="/auth" component={AuthPage} />
           <Route path="/" component={Landing} />
+          <Route path="/product/:id" component={ProductDetail} />
           <ProtectedRoute path="/home" component={Home} />
           <ProtectedRoute path="/admin" component={AdminDashboard} />
           <ProtectedRoute path="/profile" component={Profile} />
