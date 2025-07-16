@@ -831,7 +831,7 @@ function validatePassword(password) {
   return password.length >= 6 && password.length <= 128;
 }
 function validateName(name) {
-  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ\s'-]+$/.test(name);
+  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ0-9\s'-]+$/.test(name);
 }
 async function getMockUserByEmail(email) {
   for (const user of mockUsers.values()) {
@@ -846,13 +846,21 @@ async function getMockUser(id) {
 }
 function setupAuth(app2) {
   const sessionSecret = process.env.SESSION_SECRET || "development-session-secret-change-in-production";
-  const redisClient = createClient({
-    url: process.env.REDIS_URL || "redis://localhost:6379",
-    legacyMode: true
-  });
-  redisClient.connect().catch(console.error);
+  let sessionStore;
+  try {
+    const redisClient = createClient({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      legacyMode: true
+    });
+    redisClient.connect().catch(console.error);
+    sessionStore = new RedisStore({ client: redisClient });
+    console.log("\u2705 Redis session store configured");
+  } catch (error) {
+    console.warn("\u26A0\uFE0F Redis not available, using memory store:", error);
+    sessionStore = void 0;
+  }
   const sessionSettings = {
-    store: new RedisStore({ client: redisClient }),
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -861,8 +869,7 @@ function setupAuth(app2) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1e3,
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      ...process.env.NODE_ENV === "production" && { domain: ".gamesall.top" }
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax"
     },
     rolling: true
   };
@@ -990,7 +997,15 @@ function setupAuth(app2) {
       });
     } catch (error) {
       console.error("\u{1F4A5} Registration error:", error);
-      return res.status(500).json({ message: "Errore durante la registrazione" });
+      console.error("\u{1F4A5} Error details:", {
+        message: error.message,
+        stack: error.stack,
+        body: req.body
+      });
+      return res.status(500).json({
+        message: "Errore durante la registrazione",
+        error: process.env.NODE_ENV === "development" ? error.message : void 0
+      });
     }
   });
   app2.post("/api/login", (req, res, next) => {
@@ -1059,6 +1074,48 @@ function setupAuth(app2) {
       users: users2,
       environment: process.env.NODE_ENV
     });
+  });
+  app2.post("/api/test-register", async (req, res) => {
+    try {
+      const testUser = {
+        email: "test@example.com",
+        password: "test123",
+        firstName: "Test",
+        lastName: "User"
+      };
+      const hashedPassword = await hashPassword(testUser.password);
+      const userId = `test_${Date.now()}`;
+      const newUser = {
+        id: userId,
+        email: testUser.email,
+        password: hashedPassword,
+        firstName: testUser.firstName,
+        lastName: testUser.lastName,
+        profileImageUrl: null,
+        phone: null,
+        bio: null,
+        shippingAddress: {},
+        paymentMethod: {},
+        provider: "email",
+        providerId: null,
+        isAdmin: false,
+        emailVerified: false,
+        createdAt: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
+      };
+      mockUsers.set(userId, newUser);
+      const { password: _, ...userResponse } = newUser;
+      res.status(201).json({
+        message: "Test user created successfully",
+        user: userResponse
+      });
+    } catch (error) {
+      console.error("\u{1F4A5} Test registration error:", error);
+      res.status(500).json({
+        message: "Test registration failed",
+        error: error.message
+      });
+    }
   });
 }
 

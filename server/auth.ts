@@ -69,7 +69,7 @@ function validatePassword(password: string): boolean {
 }
 
 function validateName(name: string): boolean {
-  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ\s'-]+$/.test(name);
+  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ0-9\s'-]+$/.test(name);
 }
 
 // ✅ Mock getUserByEmail function
@@ -90,16 +90,24 @@ async function getMockUser(id: string) {
 export function setupAuth(app: Express) {
   const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-change-in-production';
 
-  // Configuro il client Redis
-  const redisClient = createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-    legacyMode: true,
-  });
-  redisClient.connect().catch(console.error);
+  // Configuro il client Redis con fallback in memoria
+  let sessionStore;
+  try {
+    const redisClient = createClient({
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
+      legacyMode: true,
+    });
+    redisClient.connect().catch(console.error);
+    sessionStore = new RedisStore({ client: redisClient });
+    console.log('✅ Redis session store configured');
+  } catch (error) {
+    console.warn('⚠️ Redis not available, using memory store:', error);
+    sessionStore = undefined; // Will use default memory store
+  }
 
-  // Configuro RedisStore per le sessioni
+  // Configuro le sessioni con fallback
   const sessionSettings: session.SessionOptions = {
-    store: new RedisStore({ client: redisClient }),
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -109,7 +117,6 @@ export function setupAuth(app: Express) {
       secure: process.env.NODE_ENV === 'production',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-      ...(process.env.NODE_ENV === 'production' && { domain: '.gamesall.top' }),
     },
     rolling: true,
   };
@@ -273,7 +280,15 @@ export function setupAuth(app: Express) {
       
     } catch (error) {
       console.error('💥 Registration error:', error);
-      return res.status(500).json({ message: "Errore durante la registrazione" });
+      console.error('💥 Error details:', {
+        message: error.message,
+        stack: error.stack,
+        body: req.body
+      });
+      return res.status(500).json({ 
+        message: "Errore durante la registrazione",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   });
 
@@ -361,5 +376,53 @@ export function setupAuth(app: Express) {
       users: users,
       environment: process.env.NODE_ENV
     });
+  });
+
+  // ✅ Test registration endpoint
+  app.post("/api/test-register", async (req, res) => {
+    try {
+      const testUser = {
+        email: 'test@example.com',
+        password: 'test123',
+        firstName: 'Test',
+        lastName: 'User'
+      };
+      
+      const hashedPassword = await hashPassword(testUser.password);
+      const userId = `test_${Date.now()}`;
+      
+      const newUser = {
+        id: userId,
+        email: testUser.email,
+        password: hashedPassword,
+        firstName: testUser.firstName,
+        lastName: testUser.lastName,
+        profileImageUrl: null,
+        phone: null,
+        bio: null,
+        shippingAddress: {},
+        paymentMethod: {},
+        provider: 'email',
+        providerId: null,
+        isAdmin: false,
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      mockUsers.set(userId, newUser);
+      
+      const { password: _, ...userResponse } = newUser;
+      res.status(201).json({
+        message: "Test user created successfully",
+        user: userResponse
+      });
+    } catch (error) {
+      console.error('💥 Test registration error:', error);
+      res.status(500).json({ 
+        message: "Test registration failed",
+        error: error.message
+      });
+    }
   });
 }
