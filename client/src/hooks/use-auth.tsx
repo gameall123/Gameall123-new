@@ -14,7 +14,7 @@ type AuthContextType = {
   error: Error | null;
   loginMutation: UseMutationResult<User, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<User, Error, RegisterData>;
+  registerMutation: UseMutationResult<any, Error, RegisterData>; // ✅ Fixed type
 };
 
 type LoginData = {
@@ -45,12 +45,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const res = await apiRequest("GET", "/api/user");
         return await res.json();
       } catch (error: any) {
-        if (error?.message === "Non autenticato") {
+        // ✅ Better error handling
+        if (error?.message?.includes("Non autenticato") || error?.message?.includes("401")) {
           return null;
         }
-        throw error;
+        console.warn("Auth check error:", error.message);
+        return null; // Return null instead of throwing to prevent loops
       }
     },
+    retry: 1, // ✅ Limit retries
+    staleTime: 1000 * 60 * 5, // ✅ 5 minutes cache
   });
 
   const loginMutation = useMutation({
@@ -64,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: (user: User) => {
       console.log("✅ Frontend: Login mutation success, setting user data:", user);
       queryClient.setQueryData(["/api/user"], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] }); // ✅ Refresh auth state
       toast({
         title: "Accesso effettuato",
         description: `Benvenuto, ${user.firstName}!`,
@@ -107,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.autoLogin && response.user) {
         console.log("✅ Frontend: Auto-login successful, setting user data");
         queryClient.setQueryData(["/api/user"], response.user);
+        queryClient.invalidateQueries({ queryKey: ["/api/user"] }); // ✅ Refresh auth state
         toast({
           title: "Registrazione completata",
           description: `Benvenuto, ${response.user.firstName}!`,
@@ -135,16 +141,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      queryClient.clear(); // ✅ Clear all cached data on logout
       toast({
         title: "Logout effettuato",
         description: "Arrivederci!",
       });
     },
     onError: (error: Error) => {
+      console.error("❌ Frontend: Logout error:", error);
+      // ✅ Force logout even if server request fails
+      queryClient.setQueryData(["/api/user"], null);
+      queryClient.clear();
       toast({
-        title: "Errore di logout",
-        description: error.message,
-        variant: "destructive",
+        title: "Logout effettuato",
+        description: "Sessione terminata.",
       });
     },
   });
