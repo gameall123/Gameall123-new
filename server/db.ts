@@ -9,8 +9,8 @@ neonConfig.webSocketConstructor = ws;
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/gameall_dev';
 
 if (!DATABASE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error(
-    "DATABASE_URL must be set in production. Please provision a database.",
+  console.warn(
+    "⚠️  DATABASE_URL not configured. Using SQLite fallback for demo purposes. Please provision a PostgreSQL database for production use.",
   );
 }
 

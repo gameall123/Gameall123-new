@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: gameall-v2-1
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    env: node
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: VITE_API_URL
+        value: https://gameall-v2-1.onrender.com
