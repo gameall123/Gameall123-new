@@ -152,6 +152,21 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Chat messages table for live chat
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  senderType: text("sender_type").notNull(), // 'user', 'admin', 'system'
+  senderName: text("sender_name").notNull(),
+  message: text("message").notNull(),
+  roomId: text("room_id").notNull().default("general"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("IDX_chat_messages_room_id").on(table.roomId),
+  index("IDX_chat_messages_created_at").on(table.createdAt),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   orders: many(orders),
@@ -159,6 +174,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   reviews: many(reviews),
   wishlist: many(wishlist),
   notifications: many(notifications),
+  chatMessages: many(chatMessages),
 }));
 
 export const productsRelations = relations(products, ({ many }) => ({
@@ -197,6 +213,10 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
 }));
 
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  user: one(users, { fields: [chatMessages.userId], references: [users.id] }),
+}));
+
 // Zod schemas
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -228,6 +248,9 @@ export const selectCouponSchema = createSelectSchema(coupons);
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
 export const selectNotificationSchema = createSelectSchema(notifications);
 
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
+export const selectChatMessageSchema = createSelectSchema(chatMessages);
+
 // Types
 export type UpsertUser = z.infer<typeof insertUserSchema>;
 export type User = z.infer<typeof selectUserSchema>;
@@ -258,3 +281,6 @@ export type Coupon = z.infer<typeof selectCouponSchema>;
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = z.infer<typeof selectNotificationSchema>;
+
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = z.infer<typeof selectChatMessageSchema>;

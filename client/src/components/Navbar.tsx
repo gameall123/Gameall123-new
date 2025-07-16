@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { GameAllLogo } from '@/components/GameAllLogo';
+import { NotificationCenter } from '@/components/NotificationCenter';
 import { 
   Search, 
   ShoppingCart, 
@@ -153,6 +154,9 @@ export function Navbar() {
                 </Badge>
               )}
             </Button>
+
+            {/* Notifications */}
+            <NotificationCenter />
 
             {/* User Menu */}
             {isAuthenticated ? (

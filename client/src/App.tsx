@@ -13,6 +13,7 @@ import Profile from "@/pages/Profile";
 import OrdersPage from "@/pages/OrdersPage";
 import Settings from "@/pages/Settings";
 import Wishlist from "@/pages/Wishlist";
+import ReviewsPage from "@/pages/ReviewsPage";
 import AuthPage from "@/pages/auth-page";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -42,7 +43,7 @@ function Router() {
           <ProtectedRoute path="/profile" component={Profile} />
           <ProtectedRoute path="/orders" component={OrdersPage} />
           <ProtectedRoute path="/settings" component={Settings} />
-          <ProtectedRoute path="/reviews" component={Settings} />
+          <ProtectedRoute path="/reviews" component={ReviewsPage} />
           <ProtectedRoute path="/wishlist" component={Wishlist} />
           <Route component={NotFound} />
         </Switch>

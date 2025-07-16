@@ -9,6 +9,7 @@ import {
   wishlist,
   coupons,
   notifications,
+  chatMessages,
   type User,
   type UpsertUser,
   type InsertProduct,
@@ -29,6 +30,8 @@ import {
   type Coupon,
   type InsertNotification,
   type Notification,
+  type InsertChatMessage,
+  type ChatMessage,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -37,6 +40,7 @@ import { cache, CACHE_KEYS, CACHE_TTL } from "./cache";
 export interface IStorage {
   // User operations (supports traditional email/password and social auth)
   getUser(id: string): Promise<User | undefined>;
+  getUserById(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: Omit<UpsertUser, 'id'>): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
@@ -100,7 +104,29 @@ export interface IStorage {
   getNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: number): Promise<void>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
   deleteNotification(id: number): Promise<void>;
+  
+  // Chat message operations
+  getChatMessages(roomId: string, limit?: number): Promise<ChatMessage[]>;
+  createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+  markChatMessagesAsRead(roomId: string, userId: string): Promise<void>;
+  
+  // Enhanced review operations
+  getReviewsWithDetails(userId?: string): Promise<Review[]>;
+  getReviewsWithFilters(filters: {
+    search?: string;
+    rating?: number;
+    sort?: string;
+  }): Promise<Review[]>;
+  
+  // Recommendation operations
+  getRecommendations(params: {
+    userId?: string;
+    productId?: number;
+    category?: string;
+    limit: number;
+  }): Promise<Product[]>;
   
   // Analytics
   getDashboardStats(): Promise<{
@@ -119,6 +145,10 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user as User | undefined;
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    return this.getUser(id);
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -568,8 +598,289 @@ export class DatabaseStorage implements IStorage {
     await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id));
   }
 
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await db.update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+  }
+
   async deleteNotification(id: number): Promise<void> {
     await db.delete(notifications).where(eq(notifications.id, id));
+  }
+
+  // Chat message operations
+  async getChatMessages(roomId: string, limit: number = 50): Promise<ChatMessage[]> {
+    return await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.roomId, roomId))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit);
+  }
+
+  async createChatMessage(message: InsertChatMessage): Promise<ChatMessage> {
+    const [createdMessage] = await db.insert(chatMessages).values(message).returning();
+    return createdMessage;
+  }
+
+  async markChatMessagesAsRead(roomId: string, userId: string): Promise<void> {
+    await db
+      .update(chatMessages)
+      .set({ isRead: true })
+      .where(and(eq(chatMessages.roomId, roomId), eq(chatMessages.userId, userId)));
+  }
+
+  // Enhanced review operations with joins
+  async getReviewsWithDetails(userId?: string): Promise<Review[]> {
+    const query = db
+      .select({
+        id: reviews.id,
+        productId: reviews.productId,
+        userId: reviews.userId,
+        rating: reviews.rating,
+        comment: reviews.comment,
+        createdAt: reviews.createdAt,
+        product: {
+          id: products.id,
+          name: products.name,
+          imageUrl: products.imageUrl,
+        },
+        user: {
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        }
+      })
+      .from(reviews)
+      .leftJoin(products, eq(reviews.productId, products.id))
+      .leftJoin(users, eq(reviews.userId, users.id))
+      .orderBy(desc(reviews.createdAt));
+
+    if (userId) {
+      return await query.where(eq(reviews.userId, userId));
+    }
+
+    return await query;
+  }
+
+  async getReviewsWithFilters(filters: {
+    search?: string;
+    rating?: number;
+    sort?: string;
+  }): Promise<Review[]> {
+    let query = db
+      .select({
+        id: reviews.id,
+        productId: reviews.productId,
+        userId: reviews.userId,
+        rating: reviews.rating,
+        comment: reviews.comment,
+        createdAt: reviews.createdAt,
+        product: {
+          id: products.id,
+          name: products.name,
+          imageUrl: products.imageUrl,
+        },
+        user: {
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        }
+      })
+      .from(reviews)
+      .leftJoin(products, eq(reviews.productId, products.id))
+      .leftJoin(users, eq(reviews.userId, users.id));
+
+    // Add where conditions
+    const whereConditions = [];
+    
+    if (filters.search) {
+      const searchTerm = `%${filters.search.toLowerCase()}%`;
+      whereConditions.push(
+        sql`(
+          LOWER(${products.name}) LIKE ${searchTerm} OR 
+          LOWER(${reviews.comment}) LIKE ${searchTerm}
+        )`
+      );
+    }
+
+    if (filters.rating) {
+      whereConditions.push(eq(reviews.rating, filters.rating));
+    }
+
+    if (whereConditions.length > 0) {
+      query = query.where(and(...whereConditions));
+    }
+
+    // Add sorting
+    switch (filters.sort) {
+      case 'oldest':
+        query = query.orderBy(reviews.createdAt);
+        break;
+      case 'highest':
+        query = query.orderBy(desc(reviews.rating), desc(reviews.createdAt));
+        break;
+      case 'lowest':
+        query = query.orderBy(reviews.rating, desc(reviews.createdAt));
+        break;
+      case 'newest':
+      default:
+        query = query.orderBy(desc(reviews.createdAt));
+        break;
+    }
+
+    return await query;
+  }
+
+  // Recommendation system with smart algorithms
+  async getRecommendations(params: {
+    userId?: string;
+    productId?: number;
+    category?: string;
+    limit: number;
+  }): Promise<Product[]> {
+    const { userId, productId, category, limit } = params;
+    
+    // Get base product data with ratings
+    const baseQuery = db
+      .select({
+        id: products.id,
+        name: products.name,
+        description: products.description,
+        price: products.price,
+        imageUrl: products.imageUrl,
+        category: products.category,
+        stock: products.stock,
+        isActive: products.isActive,
+        createdAt: products.createdAt,
+        averageRating: sql<number>`COALESCE(AVG(${reviews.rating}), 0)`.as('averageRating'),
+        reviewCount: sql<number>`COUNT(${reviews.id})`.as('reviewCount'),
+        orderCount: sql<number>`COUNT(DISTINCT ${orderItems.orderId})`.as('orderCount'),
+      })
+      .from(products)
+      .leftJoin(reviews, eq(products.id, reviews.productId))
+      .leftJoin(orderItems, eq(products.id, orderItems.productId))
+      .where(and(
+        eq(products.isActive, true),
+        productId ? sql`${products.id} != ${productId}` : sql`1=1`
+      ))
+      .groupBy(products.id, products.name, products.description, products.price, 
+               products.imageUrl, products.category, products.stock, 
+               products.isActive, products.createdAt);
+
+    let recommendations: any[] = [];
+
+    if (category) {
+      // Category-based recommendations
+      const categoryProducts = await baseQuery
+        .where(and(
+          eq(products.isActive, true),
+          eq(products.category, category),
+          productId ? sql`${products.id} != ${productId}` : sql`1=1`
+        ))
+        .orderBy(desc(sql`averageRating`), desc(sql`orderCount`))
+        .limit(limit);
+      
+      recommendations = categoryProducts.map((p: any) => ({
+        ...p,
+        recommendationReason: 'category'
+      }));
+    } else if (userId) {
+      // Personalized recommendations based on user's order history
+      const userOrders = await db
+        .select({ productId: orderItems.productId, category: products.category })
+        .from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .innerJoin(products, eq(orderItems.productId, products.id))
+        .where(eq(orders.userId, userId))
+        .groupBy(orderItems.productId, products.category);
+
+      if (userOrders.length > 0) {
+        // Get user's favorite categories
+        const userCategories = [...new Set(userOrders.map(o => o.category))];
+        const userProductIds = userOrders.map(o => o.productId);
+        
+        const personalizedProducts = await baseQuery
+          .where(and(
+            eq(products.isActive, true),
+            sql`${products.category} = ANY(${userCategories})`,
+            sql`${products.id} != ANY(${userProductIds})`
+          ))
+          .orderBy(desc(sql`averageRating`), desc(sql`orderCount`))
+          .limit(Math.ceil(limit * 0.6));
+
+        recommendations = personalizedProducts.map((p: any) => ({
+          ...p,
+          recommendationReason: 'personalized'
+        }));
+      }
+    }
+
+    // If we don't have enough recommendations yet, add popular products
+    if (recommendations.length < limit) {
+      const popularProducts = await baseQuery
+        .orderBy(desc(sql`orderCount`), desc(sql`averageRating`))
+        .limit(limit - recommendations.length);
+      
+      const existingIds = new Set(recommendations.map(r => r.id));
+      const popularFiltered = popularProducts
+        .filter((p: any) => !existingIds.has(p.id))
+        .map((p: any) => ({
+          ...p,
+          recommendationReason: 'popular'
+        }));
+      
+      recommendations = [...recommendations, ...popularFiltered];
+    }
+
+    // If still not enough, add trending products (recently created with good ratings)
+    if (recommendations.length < limit) {
+      const trendingProducts = await baseQuery
+        .where(and(
+          eq(products.isActive, true),
+          sql`${products.createdAt} > NOW() - INTERVAL '30 days'`
+        ))
+        .orderBy(desc(sql`averageRating`), desc(products.createdAt))
+        .limit(limit - recommendations.length);
+      
+      const existingIds = new Set(recommendations.map(r => r.id));
+      const trendingFiltered = trendingProducts
+        .filter((p: any) => !existingIds.has(p.id))
+        .map((p: any) => ({
+          ...p,
+          recommendationReason: 'trending'
+        }));
+      
+      recommendations = [...recommendations, ...trendingFiltered];
+    }
+
+    // If still not enough, add any remaining products
+    if (recommendations.length < limit) {
+      const remainingProducts = await baseQuery
+        .orderBy(desc(sql`averageRating`))
+        .limit(limit);
+      
+      const existingIds = new Set(recommendations.map(r => r.id));
+      const remainingFiltered = remainingProducts
+        .filter((p: any) => !existingIds.has(p.id))
+        .slice(0, limit - recommendations.length);
+      
+      recommendations = [...recommendations, ...remainingFiltered];
+    }
+
+    // Format the response
+    return recommendations.slice(0, limit).map((product: any) => ({
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: parseFloat(product.price),
+      imageUrl: product.imageUrl,
+      category: product.category,
+      stock: product.stock,
+      averageRating: parseFloat(product.averageRating || 0),
+      reviewCount: parseInt(product.reviewCount || 0),
+      recommendationReason: product.recommendationReason || 'recommended'
+    }));
   }
 }
 

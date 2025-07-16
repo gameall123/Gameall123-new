@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCartStore } from '@/lib/store';
 import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,9 @@ import {
   CheckCircle,
   X,
   Package,
-  Star
+  Star,
+  Tag,
+  Percent
 } from 'lucide-react';
 
 interface CheckoutModalProps {
@@ -30,9 +33,19 @@ interface CheckoutModalProps {
 export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const { items, getTotalPrice, clearCart } = useCartStore();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discount: number;
+    discountType: 'percentage' | 'fixed';
+  } | null>(null);
+  const [isCouponLoading, setIsCouponLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     firstName: user?.firstName || '',
@@ -55,6 +68,83 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
     });
   };
 
+  // Coupon functions
+  const calculateDiscount = (subtotal: number) => {
+    if (!appliedCoupon) return 0;
+    
+    if (appliedCoupon.discountType === 'percentage') {
+      return (subtotal * appliedCoupon.discount) / 100;
+    } else {
+      return Math.min(appliedCoupon.discount, subtotal);
+    }
+  };
+
+  const getDiscountedTotal = () => {
+    const subtotal = getTotalPrice();
+    const discount = calculateDiscount(subtotal);
+    return subtotal - discount;
+  };
+
+  const applyCoupon = async () => {
+    if (!couponCode.trim()) {
+      toast({
+        title: "Errore",
+        description: "Inserisci un codice coupon.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCouponLoading(true);
+    try {
+      const response = await fetch(`/api/coupons/validate/${couponCode}`);
+      if (!response.ok) {
+        throw new Error('Coupon non valido');
+      }
+      
+      const coupon = await response.json();
+      
+      // Check minimum amount if applicable
+      if (coupon.minAmount && getTotalPrice() < coupon.minAmount) {
+        toast({
+          title: "Coupon non applicabile",
+          description: `Ordine minimo richiesto: €${coupon.minAmount}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setAppliedCoupon({
+        code: coupon.code,
+        discount: coupon.discount,
+        discountType: coupon.discountType,
+      });
+
+      toast({
+        title: "Coupon applicato!",
+        description: `Sconto di ${coupon.discountType === 'percentage' ? `${coupon.discount}%` : `€${coupon.discount}`} applicato.`,
+      });
+
+      setCouponCode('');
+    } catch (error) {
+      toast({
+        title: "Errore",
+        description: "Codice coupon non valido o scaduto.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    toast({
+      title: "Coupon rimosso",
+      description: "Il coupon è stato rimosso dal tuo ordine.",
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
@@ -63,11 +153,14 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
       // Simulate payment processing delay
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Create order with proper total and items (including VAT)
-      const totalWithVAT = getTotalPrice() * 1.22;
+      // Create order with proper total and items (including VAT and discount)
+      const discountedTotal = getDiscountedTotal();
+      const totalWithVAT = discountedTotal * 1.22;
       const orderData = {
         total: totalWithVAT.toString(),
         status: 'pending',
+        couponCode: appliedCoupon?.code || null,
+        discount: appliedCoupon ? calculateDiscount(getTotalPrice()) : 0,
         shippingAddress: {
           firstName: formData.firstName,
           lastName: formData.lastName,
@@ -347,7 +440,7 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
                               <span>Elaborazione...</span>
                             </div>
                           ) : (
-                            `Paga €${getTotalPrice().toFixed(2)}`
+                            `Paga €${(getDiscountedTotal() * 1.22).toFixed(2)}`
                           )}
                         </Button>
                       </div>
@@ -439,23 +532,87 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
                 
                 <Separator />
                 
+                {/* Coupon Section */}
+                {!appliedCoupon ? (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Tag className="w-4 h-4" />
+                      Codice Sconto
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        placeholder="Inserisci codice"
+                        className="flex-1"
+                        onKeyPress={(e) => e.key === 'Enter' && applyCoupon()}
+                      />
+                      <Button
+                        onClick={applyCoupon}
+                        disabled={isCouponLoading || !couponCode.trim()}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {isCouponLoading ? 'Verifica...' : 'Applica'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">
+                          {appliedCoupon.code}
+                        </span>
+                        <Badge variant="secondary" className="bg-green-100 text-green-800">
+                          {appliedCoupon.discountType === 'percentage' 
+                            ? `${appliedCoupon.discount}%` 
+                            : `€${appliedCoupon.discount}`}
+                        </Badge>
+                      </div>
+                      <Button 
+                        onClick={removeCoupon}
+                        variant="ghost" 
+                        size="sm"
+                        className="text-green-700 hover:text-green-900"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
+                <Separator />
+                
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Subtotale</span>
                     <span>€{getTotalPrice().toFixed(2)}</span>
                   </div>
+                  
+                  {appliedCoupon && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span className="flex items-center gap-1">
+                        <Percent className="w-3 h-3" />
+                        Sconto ({appliedCoupon.code})
+                      </span>
+                      <span>-€{calculateDiscount(getTotalPrice()).toFixed(2)}</span>
+                    </div>
+                  )}
+                  
                   <div className="flex justify-between text-sm">
                     <span>Spedizione</span>
                     <span className="text-green-600">Gratuita</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>IVA (22%)</span>
-                    <span>€{(getTotalPrice() * 0.22).toFixed(2)}</span>
+                    <span>€{(getDiscountedTotal() * 0.22).toFixed(2)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between text-lg font-bold">
                     <span>Totale</span>
-                    <span className="text-blue-600">€{(getTotalPrice() * 1.22).toFixed(2)}</span>
+                    <span className="text-blue-600">€{(getDiscountedTotal() * 1.22).toFixed(2)}</span>
                   </div>
                 </div>
               </CardContent>

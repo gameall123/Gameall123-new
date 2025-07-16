@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
+import { setupWebSocket } from "./websocket";
 import { 
   insertProductSchema, 
   insertOrderSchema, 
@@ -459,13 +460,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Review routes
+  // Review routes with enhanced filtering
   app.get("/api/reviews", async (req, res) => {
     try {
-      const { productId, userId } = req.query;
+      const { productId, userId, search, rating, sort } = req.query;
       let reviews;
       
-      if (productId) {
+      // If it's a filtered request (has search, rating, or sort), use enhanced method
+      if (search || rating || sort) {
+        reviews = await storage.getReviewsWithFilters({
+          search: search as string,
+          rating: rating ? parseInt(rating as string) : undefined,
+          sort: sort as string
+        });
+      } else if (productId) {
         reviews = await storage.getReviewsByProduct(parseInt(productId as string));
       } else if (userId) {
         reviews = await storage.getReviewsByUser(userId as string);
@@ -546,6 +554,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting review:", error);
       res.status(500).json({ message: "Failed to delete review" });
+    }
+  });
+
+  // Enhanced review routes with filters and user-specific queries
+  app.get("/api/reviews/user/:userId", async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const reviews = await storage.getReviewsWithDetails(userId);
+      res.json(reviews);
+    } catch (error) {
+      console.error("Error fetching user reviews:", error);
+      res.status(500).json({ message: "Failed to fetch user reviews" });
     }
   });
 
@@ -642,6 +662,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
+  app.get("/api/coupons/validate/:code", 
+    rateLimit(60 * 1000, 10),
+    async (req: any, res) => {
+      try {
+        const code = req.params.code;
+        const coupon = await storage.getCouponByCode(code);
+        
+        if (!coupon) {
+          return res.status(404).json({ message: "Coupon not found" });
+        }
+        
+        if (!coupon.isActive) {
+          return res.status(400).json({ message: "Coupon is not active" });
+        }
+        
+        if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
+          return res.status(400).json({ message: "Coupon has expired" });
+        }
+        
+        if (coupon.maxUses && (coupon.usedCount || 0) >= coupon.maxUses) {
+          return res.status(400).json({ message: "Coupon usage limit reached" });
+        }
+        
+        res.json(coupon);
+      } catch (error) {
+        console.error("Error validating coupon:", error);
+        res.status(500).json({ message: "Failed to validate coupon" });
+      }
+    }
+  );
+
   app.post("/api/coupons", 
     rateLimit(60 * 1000, 5),
     sanitizeHtml,
@@ -697,6 +748,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(notifications);
     } catch (error) {
       console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.get("/api/notifications/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.params.userId;
+      const currentUserId = req.user.id;
+      
+      // Verify user can only access their own notifications
+      if (userId !== currentUserId) {
+        return res.status(403).json({ message: "Not authorized to access other user's notifications" });
+      }
+      
+      const notifications = await storage.getNotifications(userId);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching user notifications:", error);
       res.status(500).json({ message: "Failed to fetch notifications" });
     }
   });
@@ -759,6 +828,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/notifications/:userId/read-all", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.params.userId;
+      const currentUserId = req.user.id;
+      
+      // Verify user can only update their own notifications
+      if (userId !== currentUserId) {
+        return res.status(403).json({ message: "Not authorized to update other user's notifications" });
+      }
+      
+      await storage.markAllNotificationsAsRead(userId);
+      res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
+    }
+  });
+
   app.get("/api/admin/top-products", isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.id);
@@ -789,6 +876,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Recommendation routes
+  app.get("/api/recommendations", async (req, res) => {
+    try {
+      const { userId, productId, category, limit = 6 } = req.query;
+      
+      const recommendations = await storage.getRecommendations({
+        userId: userId as string,
+        productId: productId ? parseInt(productId as string) : undefined,
+        category: category as string,
+        limit: parseInt(limit as string)
+      });
+      
+      res.json(recommendations);
+    } catch (error) {
+      console.error("Error fetching recommendations:", error);
+      res.status(500).json({ message: "Failed to fetch recommendations" });
+    }
+  });
+
   const httpServer = createServer(app);
+  
+  // Setup WebSocket for live chat
+  setupWebSocket(httpServer);
+  
   return httpServer;
 }
