@@ -76,8 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: RegisterData) => {
-      const res = await apiRequest("POST", "/api/register", credentials);
-      return await res.json();
+      try {
+        const res = await apiRequest("POST", "/api/register", credentials);
+        
+        // Check if the response is JSON
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Il server ha restituito una risposta non valida");
+        }
+        
+        return await res.json();
+      } catch (error: any) {
+        console.error("Registration error:", error);
+        throw new Error(error.message || "Errore durante la registrazione");
+      }
     },
     onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
@@ -87,9 +99,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
     onError: (error: Error) => {
+      console.error("Registration mutation error:", error);
       toast({
         title: "Errore di registrazione",
-        description: error.message,
+        description: error.message || "Si è verificato un errore durante la registrazione",
         variant: "destructive",
       });
     },

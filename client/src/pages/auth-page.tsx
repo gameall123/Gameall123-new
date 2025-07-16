@@ -60,7 +60,12 @@ export default function AuthPage() {
   };
 
   const onRegister = (data: RegisterFormData) => {
-    registerMutation.mutate(data);
+    console.log("🚀 Starting registration with data:", data);
+    try {
+      registerMutation.mutate(data);
+    } catch (error) {
+      console.error("❌ Error in onRegister:", error);
+    }
   };
 
   return (
