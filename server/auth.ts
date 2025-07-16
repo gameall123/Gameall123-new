@@ -82,11 +82,20 @@ export function setupAuth(app: Express) {
   const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-change-in-production';
 
   // Configuro il client Redis
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  if (process.env.NODE_ENV === 'production' && !process.env.REDIS_URL) {
+    console.error('❌ REDIS_URL è obbligatorio in produzione!');
+    process.exit(1);
+  }
   const redisClient = createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    url: redisUrl,
     legacyMode: true,
   });
-  redisClient.connect().catch(console.error);
+  redisClient.connect().catch((err) => {
+    console.error('❌ Errore connessione Redis:', err);
+    if (process.env.NODE_ENV === 'production') process.exit(1);
+  });
+  console.log(`✅ Session store: Redis (${redisUrl})`);
 
   // Configuro RedisStore per le sessioni
   const sessionSettings: session.SessionOptions = {
