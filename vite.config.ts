@@ -27,11 +27,40 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // ✅ Better build optimizations
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-button', '@radix-ui/react-toast'],
+        },
+      },
+    },
+    // ✅ Increase chunk size warning limit
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     fs: {
       strict: true,
       deny: ["**/.*"],
     },
+    // ✅ Better development server configuration
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+    // ✅ Enable CORS for development
+    cors: true,
+  },
+  // ✅ Define environment variables
+  define: {
+    __DEV__: JSON.stringify(process.env.NODE_ENV === 'development'),
+  },
+  // ✅ Better error handling
+  esbuild: {
+    logOverride: { 'this-is-undefined-in-esm': 'silent' }
   },
 });

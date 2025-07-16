@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useState } from "react";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
@@ -30,22 +31,36 @@ function Router() {
     setIsCheckoutOpen(true);
   };
 
+  // ✅ Better loading state handling
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Caricamento...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
       <main className="flex-1">
-        <Switch>
-          <Route path="/auth" component={AuthPage} />
-          <Route path="/" component={Landing} />
-          <ProtectedRoute path="/home" component={Home} />
-          <ProtectedRoute path="/admin" component={AdminDashboard} />
-          <ProtectedRoute path="/profile" component={Profile} />
-          <ProtectedRoute path="/orders" component={OrdersPage} />
-          <ProtectedRoute path="/settings" component={Settings} />
-          <ProtectedRoute path="/reviews" component={Settings} />
-          <ProtectedRoute path="/wishlist" component={Wishlist} />
-          <Route component={NotFound} />
-        </Switch>
+        <ErrorBoundary>
+          <Switch>
+            <Route path="/auth" component={AuthPage} />
+            <Route path="/" component={Landing} />
+            <ProtectedRoute path="/home" component={Home} />
+            <ProtectedRoute path="/admin" component={AdminDashboard} />
+            <ProtectedRoute path="/profile" component={Profile} />
+            <ProtectedRoute path="/orders" component={OrdersPage} />
+            <ProtectedRoute path="/settings" component={Settings} />
+            <ProtectedRoute path="/reviews" component={Settings} />
+            <ProtectedRoute path="/wishlist" component={Wishlist} />
+            <Route component={NotFound} />
+          </Switch>
+        </ErrorBoundary>
       </main>
       <Footer />
       <CartSlideout onCheckout={handleCheckout} />
@@ -58,14 +73,16 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
