@@ -12,6 +12,7 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   error: Error | null;
+  isAuthenticated: boolean; // ✅ Added for backward compatibility
   loginMutation: UseMutationResult<User, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<any, Error, RegisterData>; // ✅ Fixed type
@@ -165,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: user ?? null,
         isLoading,
         error,
+        isAuthenticated: !!user, // ✅ Computed property for backward compatibility
         loginMutation,
         logoutMutation,
         registerMutation,
