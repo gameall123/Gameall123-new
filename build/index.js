@@ -788,6 +788,7 @@ var init_storage = __esm({
 // server/index.ts
 import express3 from "express";
 import cors from "cors";
+import helmet from "helmet";
 
 // server/routes.ts
 init_storage();
@@ -799,6 +800,8 @@ import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import RedisStore from "connect-redis";
+import { createClient } from "redis";
 var scryptAsync = promisify(scrypt);
 var mockUsers = /* @__PURE__ */ new Map();
 async function hashPassword(password) {
@@ -843,22 +846,25 @@ async function getMockUser(id) {
 }
 function setupAuth(app2) {
   const sessionSecret = process.env.SESSION_SECRET || "development-session-secret-change-in-production";
+  const redisClient = createClient({
+    url: process.env.REDIS_URL || "redis://localhost:6379",
+    legacyMode: true
+  });
+  redisClient.connect().catch(console.error);
   const sessionSettings = {
+    store: new RedisStore({ client: redisClient }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     name: "gameall.session",
-    // ✅ Custom session name
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1e3,
-      // 1 week
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax"
-      // ✅ Better CSRF protection
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      ...process.env.NODE_ENV === "production" && { domain: ".gamesall.top" }
     },
     rolling: true
-    // ✅ Extend session on activity
   };
   app2.set("trust proxy", 1);
   app2.use(session(sessionSettings));
@@ -2037,15 +2043,18 @@ var vite_config_default = defineConfig({
 
 // server/vite.ts
 import { nanoid as nanoid2 } from "nanoid";
+import winston from "winston";
 var viteLogger = createLogger();
+var logger = winston.createLogger({
+  level: process.env.NODE_ENV === "production" ? "info" : "debug",
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp: timestamp2, level, message }) => `${timestamp2} [${level}] ${message}`)
+  ),
+  transports: [new winston.transports.Console()]
+});
 function log(message, source = "express") {
-  const formattedTime = (/* @__PURE__ */ new Date()).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true
-  });
-  console.log(`${formattedTime} [${source}] ${message}`);
+  logger.info(`[${source}] ${message}`);
 }
 async function setupVite(app2, server) {
   const serverOptions = {
@@ -2112,17 +2121,12 @@ app.use((req, res, next) => {
   res.removeHeader("X-Powered-By");
   next();
 });
-var corsOrigins = [
-  "https://gameall123-new.onrender.com",
-  "http://localhost:5173",
-  // Vite dev server
-  "http://localhost:3000",
-  // Alternative dev server
-  "http://localhost:5000"
-  // Local server
-];
+app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === "production" ? "https://gameall123-new.onrender.com" : corsOrigins,
+  origin: process.env.NODE_ENV === "production" ? [
+    "https://gamesall.top",
+    "https://www.gamesall.top"
+  ] : true,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
