@@ -2226,7 +2226,10 @@ function serveStatic(app2) {
     );
   }
   app2.use(express2.static(distPath));
-  app2.use("*", (_req, res) => {
+  app2.use("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      return next();
+    }
     res.sendFile(path4.resolve(distPath, "index.html"));
   });
 }
