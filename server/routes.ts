@@ -31,6 +31,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   setupAuth(app);
 
+  // Auth page route - serve the React app for /auth
+  app.get("/auth", (_req, res) => {
+    const distPath = path.resolve(process.cwd(), "dist", "public");
+    res.sendFile(path.resolve(distPath, "index.html"));
+  });
+
+  // Debug endpoints
+  app.get("/api/debug/status", (_req, res) => {
+    res.json({
+      status: "server_running",
+      version: "2.1.0",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV,
+      distPath: path.resolve(process.cwd(), "dist", "public"),
+      workingDirectory: process.cwd()
+    });
+  });
+
   // Serve static files from uploads directory
   app.use('/uploads', (req, res, next) => {
     // Add security headers for uploaded files
