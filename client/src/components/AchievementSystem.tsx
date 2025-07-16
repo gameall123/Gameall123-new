@@ -17,7 +17,8 @@ import {
   MessageCircle,
   Heart,
   Clock,
-  Fire,
+  DollarSign,
+  Package,
   Sparkles
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
