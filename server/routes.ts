@@ -74,7 +74,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       res.status(500).json({
         message: "Test registration failed",
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });

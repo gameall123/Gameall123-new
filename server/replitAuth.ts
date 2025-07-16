@@ -75,11 +75,12 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
+// Check if user should be admin
+const adminUserIds = ['45037735', '45032407', '45039645'];
+
 async function upsertUser(
   claims: any,
 ) {
-  // Check if user should be admin
-  const adminUserIds = ['45037735', '45032407', '45039645'];
   const isAdmin = adminUserIds.includes(claims["sub"]);
   
   await storage.upsertUser({
@@ -104,9 +105,31 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user = {};
+    const claims = tokens.claims();
+    if (!claims) {
+      return verified(new Error('No claims received'), null);
+    }
+    
+    const user = {
+      id: claims["sub"] as string,
+      email: claims["email"] as string,
+      firstName: claims["first_name"] as string,
+      lastName: claims["last_name"] as string,
+      profileImageUrl: claims["profile_image_url"] as string | null,
+      isAdmin: adminUserIds.includes(claims["sub"] as string),
+      provider: 'replit',
+      providerId: claims["sub"] as string,
+      password: null,
+      phone: null,
+      bio: null,
+      shippingAddress: {},
+      paymentMethod: {},
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    await upsertUser(claims);
     verified(null, user);
   };
 

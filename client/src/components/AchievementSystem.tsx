@@ -394,7 +394,7 @@ export default function AchievementSystem() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Fire className="h-5 w-5 text-orange-500" />
+                  <Sparkles className="h-5 w-5 text-orange-500" />
                   Achievement Recenti
                 </CardTitle>
               </CardHeader>
