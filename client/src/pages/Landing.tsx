@@ -68,17 +68,17 @@ export default function Landing() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button 
-                onClick={() => window.location.href = '/api/login'}
-                size="lg"
+                            <Button 
+                onClick={() => window.location.href = '/auth'}
+                size="lg" 
                 className="bg-white text-gray-900 hover:bg-gray-100 shadow-lg"
               >
                 Inizia Subito
               </Button>
               <Button 
-                onClick={() => window.location.href = '/api/login'}
-                size="lg"
-                variant="outline"
+                onClick={() => window.location.href = '/auth'}
+                size="lg" 
+                variant="outline" 
                 className="border-white text-white hover:bg-white hover:text-gray-900"
               >
                 Accedi
@@ -134,7 +134,7 @@ export default function Landing() {
                         {product.price}
                       </span>
                       <Button 
-                        onClick={() => window.location.href = '/api/login'}
+                        onClick={() => window.location.href = '/auth'}
                         className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-md"
                       >
                         Aggiungi

@@ -30,7 +30,7 @@ export function AuthModals({
 
   const handleLogin = () => {
     // Redirect to Replit auth
-    window.location.href = '/api/login';
+    window.location.href = '/auth';
   };
 
   const handleGoogleLogin = () => {
@@ -41,7 +41,7 @@ export function AuthModals({
     e.preventDefault();
     // For now, redirect to login since we're using Replit auth
     showNotification('Registrazione tramite login Replit', 'info');
-    window.location.href = '/api/login';
+    window.location.href = '/auth';
   };
 
   if (!isLoginOpen && !isRegisterOpen) return null;

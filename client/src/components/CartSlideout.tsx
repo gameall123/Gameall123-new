@@ -29,7 +29,7 @@ export function CartSlideout({ onCheckout }: CartSlideoutProps) {
 
   const handleCheckout = async () => {
     if (!isAuthenticated) {
-      window.location.href = '/api/login';
+      window.location.href = '/auth';
       return;
     }
     

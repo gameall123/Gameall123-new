@@ -153,7 +153,7 @@ export default function Profile() {
               Devi effettuare l'accesso per visualizzare il tuo profilo
             </p>
             <Button 
-              onClick={() => window.location.href = '/api/login'}
+              onClick={() => window.location.href = '/auth'}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
               Accedi

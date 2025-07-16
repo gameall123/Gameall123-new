@@ -47,7 +47,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
   
   const handleAddToCart = () => {
     if (!isAuthenticated) {
-      window.location.href = '/api/login';
+      window.location.href = '/auth';
       return;
     }
     
@@ -63,7 +63,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
   const handleWishlist = () => {
     if (!isAuthenticated) {
-      window.location.href = '/api/login';
+      window.location.href = '/auth';
       return;
     }
     

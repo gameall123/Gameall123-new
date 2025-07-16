@@ -159,7 +159,7 @@ export default function OrdersPage() {
               Devi effettuare l'accesso per visualizzare i tuoi ordini
             </p>
             <Button 
-              onClick={() => window.location.href = '/api/login'}
+              onClick={() => window.location.href = '/auth'}
               className="bg-blue-600 hover:bg-blue-700"
             >
               Accedi ora
