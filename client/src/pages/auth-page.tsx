@@ -32,8 +32,16 @@ export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
 
-  // Redirect if already authenticated
+  // ✅ Better logging for debugging
+  console.log('🔍 AuthPage state:', { 
+    user: user ? { id: user.id, email: user.email } : null,
+    isLoginPending: loginMutation.isPending,
+    isRegisterPending: registerMutation.isPending
+  });
+
+  // ✅ Redirect if already authenticated with better logging
   if (user) {
+    console.log('✅ User authenticated, redirecting to home:', user);
     return <Redirect to="/" />;
   }
 
@@ -55,16 +63,23 @@ export default function AuthPage() {
     },
   });
 
-  const onLogin = (data: LoginFormData) => {
-    loginMutation.mutate(data);
+  const onLogin = async (data: LoginFormData) => {
+    try {
+      console.log("🔐 Starting login process for:", data.email);
+      await loginMutation.mutateAsync(data);
+      console.log("✅ Login completed successfully");
+    } catch (error) {
+      console.error("❌ Login error:", error);
+    }
   };
 
-  const onRegister = (data: RegisterFormData) => {
-    console.log("🚀 Starting registration with data:", data);
+  const onRegister = async (data: RegisterFormData) => {
     try {
-      registerMutation.mutate(data);
+      console.log("📝 Starting registration process for:", data.email);
+      await registerMutation.mutateAsync(data);
+      console.log("✅ Registration completed successfully");
     } catch (error) {
-      console.error("❌ Error in onRegister:", error);
+      console.error("❌ Registration error:", error);
     }
   };
 
