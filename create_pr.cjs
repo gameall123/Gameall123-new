@@ -1,5 +1,4 @@
 const { execSync } = require('child_process');
-const fetch = require('node-fetch');
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || 'YOUR_GITHUB_TOKEN_HERE';
 const REPO_OWNER = 'gameall123';
@@ -11,6 +10,7 @@ function run(cmd) {
 }
 
 async function createPullRequest(branchName, title, body) {
+  const fetch = (await import('node-fetch')).default;
   const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls`, {
     method: 'POST',
     headers: {
