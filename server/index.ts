@@ -5,9 +5,18 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// ✅ CORS configurato correttamente
+// ✅ CORS configurato correttamente per dev e production
+const corsOrigins = [
+  "https://gameall123-new.onrender.com",
+  "http://localhost:5173", // Vite dev server
+  "http://localhost:3000", // Alternative dev server
+  "http://localhost:5000"  // Local server
+];
+
 app.use(cors({
-  origin: "https://gameall123-new.onrender.com",
+  origin: process.env.NODE_ENV === 'production' 
+    ? "https://gameall123-new.onrender.com"
+    : corsOrigins,
   credentials: true
 }));
 

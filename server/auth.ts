@@ -124,7 +124,7 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // ✅ Updated registration endpoint - saves to mock storage
+  // ✅ Updated registration endpoint - saves to mock storage and auto-login
   app.post("/api/register", async (req, res) => {
     try {
       console.log('📝 Registration attempt');
@@ -159,11 +159,28 @@ export function setupAuth(app: Express) {
       
       console.log('✅ User registered and saved:', userId);
       
-      // Return user without password
-      const { password: _, ...userResponse } = newUser;
-      return res.status(201).json({
-        message: "Registrazione completata con successo",
-        user: userResponse
+      // ✅ Auto-login after registration
+      req.login(newUser, (err) => {
+        if (err) {
+          console.error('💥 Auto-login error after registration:', err);
+          // Still return success for registration, but without auto-login
+          const { password: _, ...userResponse } = newUser;
+          return res.status(201).json({
+            message: "Registrazione completata con successo. Effettua il login.",
+            user: userResponse,
+            autoLogin: false
+          });
+        }
+        
+        console.log('✅ Registration and auto-login successful');
+        
+        // Return user without password
+        const { password: _, ...userResponse } = newUser;
+        return res.status(201).json({
+          message: "Registrazione completata con successo",
+          user: userResponse,
+          autoLogin: true
+        });
       });
       
     } catch (error) {
@@ -174,7 +191,7 @@ export function setupAuth(app: Express) {
 
   // ✅ Updated login endpoint with better error handling
   app.post("/api/login", (req, res, next) => {
-    console.log('🔐 Login endpoint called');
+    console.log('🔐 Login endpoint called with:', { email: req.body?.email });
     
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
@@ -190,13 +207,20 @@ export function setupAuth(app: Express) {
         });
       }
       
+      console.log('🔐 User found, attempting session login for:', user.email);
+      
       req.login(user, (err) => {
         if (err) {
           console.error('💥 Session login error:', err);
           return next(err);
         }
         
-        console.log('✅ Login successful, returning user data');
+        console.log('✅ Login successful, user authenticated:', user.email);
+        console.log('🔍 Session info:', { 
+          sessionId: req.sessionID,
+          isAuthenticated: req.isAuthenticated(),
+          userId: req.user?.id 
+        });
         
         // Return user without password
         const { password: _, ...userResponse } = user;

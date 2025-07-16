@@ -29,15 +29,28 @@ type LoginFormData = z.infer<typeof loginSchema>;
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
-  const { user, loginMutation, registerMutation } = useAuth();
+  const { user, loginMutation, registerMutation, isLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
 
   // ✅ Better logging for debugging
   console.log('🔍 AuthPage state:', { 
     user: user ? { id: user.id, email: user.email } : null,
+    isLoading,
     isLoginPending: loginMutation.isPending,
     isRegisterPending: registerMutation.isPending
   });
+
+  // ✅ Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Verificando autenticazione...</p>
+        </div>
+      </div>
+    );
+  }
 
   // ✅ Redirect if already authenticated with better logging
   if (user) {
