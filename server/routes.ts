@@ -54,6 +54,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/test", (req, res) => {
     res.json({ message: "Server is working", timestamp: new Date().toISOString() });
   });
+
+  // Test endpoint specifically for auth page debugging
+  app.get("/api/test-auth", (req, res) => {
+    res.json({ 
+      message: "Auth API is working", 
+      timestamp: new Date().toISOString(),
+      version: "2.1.1",
+      environment: process.env.NODE_ENV
+    });
+  });
   
   app.post("/api/test/register", (req, res) => {
     try {
