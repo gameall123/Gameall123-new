@@ -1395,7 +1395,7 @@ async function registerRoutes(app2) {
   app2.get("/api/debug/status", (_req, res) => {
     res.json({
       status: "server_running",
-      version: "2.1.0",
+      version: "2.1.1",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
@@ -2266,7 +2266,7 @@ app.use((req, res, next) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
-    version: "2.1.0",
+    version: "2.1.1",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
