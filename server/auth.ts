@@ -6,6 +6,8 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import RedisStore from "connect-redis";
+import { createClient } from "redis";
 
 declare global {
   namespace Express {
@@ -78,20 +80,29 @@ async function getMockUser(id: string) {
 
 export function setupAuth(app: Express) {
   const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-change-in-production';
-  
-  // ✅ Improved session configuration
+
+  // Configuro il client Redis
+  const redisClient = createClient({
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    legacyMode: true,
+  });
+  redisClient.connect().catch(console.error);
+
+  // Configuro RedisStore per le sessioni
   const sessionSettings: session.SessionOptions = {
+    store: new RedisStore({ client: redisClient }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    name: 'gameall.session', // ✅ Custom session name
+    name: 'gameall.session',
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 1 week
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // ✅ Better CSRF protection
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      ...(process.env.NODE_ENV === 'production' && { domain: '.gamesall.top' }),
     },
-    rolling: true, // ✅ Extend session on activity
+    rolling: true,
   };
 
   app.set("trust proxy", 1);
