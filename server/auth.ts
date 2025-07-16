@@ -21,11 +21,20 @@ const scryptAsync = promisify(scrypt);
 const mockUsers = new Map<string, {
   id: string;
   email: string;
-  password: string;
+  password: string | null;
   firstName: string;
   lastName: string;
+  profileImageUrl: string | null;
+  phone: string | null;
+  bio: string | null;
+  shippingAddress: any;
+  paymentMethod: any;
+  provider: string;
+  providerId: string | null;
   isAdmin: boolean;
-  createdAt: string;
+  emailVerified: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 }>();
 
 async function hashPassword(password: string) {
@@ -135,6 +144,10 @@ export function setupAuth(app: Express) {
             return done(null, false, { message: 'Email o password non validi' });
           }
           
+          if (!user.password) {
+            console.log('❌ User has no password (social auth):', email);
+            return done(null, false, { message: 'Email o password non validi' });
+          }
           const passwordMatch = await comparePasswords(password, user.password);
           if (!passwordMatch) {
             console.log('❌ Wrong password for:', email);
@@ -216,8 +229,17 @@ export function setupAuth(app: Express) {
         password: hashedPassword,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        profileImageUrl: null,
+        phone: null,
+        bio: null,
+        shippingAddress: {},
+        paymentMethod: {},
+        provider: 'email',
+        providerId: null,
         isAdmin: false,
-        createdAt: new Date().toISOString()
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
       };
 
       // ✅ Save to mock storage

@@ -15,8 +15,8 @@ interface TranslationContextType {
 }
 
 // Translations object structure
-type TranslationValue = string | Record<string, TranslationValue>;
-type Translations = Record<string, TranslationValue>;
+type TranslationValue = string | Record<string, any>;
+type Translations = Record<string, any>;
 
 // Default translations (fallback)
 const defaultTranslations: Record<SupportedLocale, Translations> = {
