@@ -122,8 +122,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user as User | undefined;
+    try {
+      console.log('🔍 getUserByEmail called for:', email);
+      const allUsers = await db.select().from(users).where(eq(users.email, email));
+      console.log('📊 Database returned users:', allUsers.length);
+      
+      // Filter manually for mock database compatibility
+      const user = allUsers.find((u: any) => u.email === email);
+      console.log('🎯 Found user:', user ? 'YES' : 'NO');
+      
+      return user as User | undefined;
+    } catch (error) {
+      console.error('❌ getUserByEmail error:', error);
+      return undefined;
+    }
   }
 
   async createUser(userData: Omit<UpsertUser, 'id'>): Promise<User> {

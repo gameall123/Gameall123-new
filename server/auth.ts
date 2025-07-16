@@ -77,18 +77,26 @@ export function setupAuth(app: Express) {
   // Registration endpoint
   app.post("/api/register", async (req, res, next) => {
     try {
+      console.log('📝 Registration attempt:', { email: req.body.email, hasPassword: !!req.body.password });
+      
       const { email, password, firstName, lastName } = req.body;
       
       if (!email || !password || !firstName || !lastName) {
+        console.log('❌ Missing required fields');
         return res.status(400).json({ message: "Tutti i campi sono obbligatori" });
       }
 
+      console.log('🔍 Checking existing user...');
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
+        console.log('❌ Email already exists');
         return res.status(400).json({ message: "Email già registrata" });
       }
 
+      console.log('🔐 Hashing password...');
       const hashedPassword = await hashPassword(password);
+      
+      console.log('💾 Creating user...');
       const user = await storage.createUser({
         email,
         password: hashedPassword,
@@ -97,8 +105,15 @@ export function setupAuth(app: Express) {
         isAdmin: false,
       });
 
+      console.log('✅ User created successfully:', { id: user.id, email: user.email });
+
       req.login(user, (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.log('❌ Login error:', err);
+          return next(err);
+        }
+        
+        console.log('🎉 Registration completed successfully');
         res.status(201).json({
           id: user.id,
           email: user.email,
@@ -108,6 +123,7 @@ export function setupAuth(app: Express) {
         });
       });
     } catch (error) {
+      console.error('💥 Registration error:', error);
       res.status(500).json({ message: "Errore durante la registrazione" });
     }
   });
