@@ -794,18 +794,52 @@ init_storage();
 import { createServer } from "http";
 
 // server/auth.ts
-init_storage();
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 var scryptAsync = promisify(scrypt);
+var mockUsers = /* @__PURE__ */ new Map();
+async function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const buf = await scryptAsync(password, salt, 64);
+  return `${buf.toString("hex")}.${salt}`;
+}
 async function comparePasswords(supplied, stored) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = await scryptAsync(supplied, salt, 64);
-  return timingSafeEqual(hashedBuf, suppliedBuf);
+  try {
+    const [hashed, salt] = stored.split(".");
+    if (!hashed || !salt) {
+      return false;
+    }
+    const hashedBuf = Buffer.from(hashed, "hex");
+    const suppliedBuf = await scryptAsync(supplied, salt, 64);
+    return timingSafeEqual(hashedBuf, suppliedBuf);
+  } catch (error) {
+    console.error("Password comparison error:", error);
+    return false;
+  }
+}
+function validateEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email) && email.length <= 255;
+}
+function validatePassword(password) {
+  return password.length >= 6 && password.length <= 128;
+}
+function validateName(name) {
+  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ\s'-]+$/.test(name);
+}
+async function getMockUserByEmail(email) {
+  for (const user of mockUsers.values()) {
+    if (user.email.toLowerCase() === email.toLowerCase()) {
+      return user;
+    }
+  }
+  return null;
+}
+async function getMockUser(id) {
+  return mockUsers.get(id) || null;
 }
 function setupAuth(app2) {
   const sessionSecret = process.env.SESSION_SECRET || "development-session-secret-change-in-production";
@@ -813,12 +847,18 @@ function setupAuth(app2) {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    name: "gameall.session",
+    // ✅ Custom session name
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1e3
+      maxAge: 7 * 24 * 60 * 60 * 1e3,
       // 1 week
-    }
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax"
+      // ✅ Better CSRF protection
+    },
+    rolling: true
+    // ✅ Extend session on activity
   };
   app2.set("trust proxy", 1);
   app2.use(session(sessionSettings));
@@ -829,12 +869,29 @@ function setupAuth(app2) {
       { usernameField: "email" },
       async (email, password, done) => {
         try {
-          const user = await storage.getUserByEmail(email);
-          if (!user || !await comparePasswords(password, user.password)) {
+          console.log("\u{1F510} Login attempt for email:", email);
+          if (!validateEmail(email)) {
+            console.log("\u274C Invalid email format:", email);
+            return done(null, false, { message: "Formato email non valido" });
+          }
+          if (!validatePassword(password)) {
+            console.log("\u274C Invalid password format");
+            return done(null, false, { message: "Password non valida" });
+          }
+          const user = await getMockUserByEmail(email);
+          if (!user) {
+            console.log("\u274C User not found:", email);
             return done(null, false, { message: "Email o password non validi" });
           }
+          const passwordMatch = await comparePasswords(password, user.password);
+          if (!passwordMatch) {
+            console.log("\u274C Wrong password for:", email);
+            return done(null, false, { message: "Email o password non validi" });
+          }
+          console.log("\u2705 Login successful for:", email);
           return done(null, user);
         } catch (error) {
+          console.error("\u{1F4A5} Login error:", error);
           return done(error);
         }
       }
@@ -843,7 +900,7 @@ function setupAuth(app2) {
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id, done) => {
     try {
-      const user = await storage.getUser(id);
+      const user = await getMockUser(id);
       done(null, user);
     } catch (error) {
       done(error);
@@ -853,7 +910,9 @@ function setupAuth(app2) {
     res.json({
       message: "Auth server is working",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      endpoints: ["/api/test", "/api/register", "/api/login", "/api/user"]
+      endpoints: ["/api/test", "/api/register", "/api/login", "/api/user"],
+      registeredUsers: mockUsers.size,
+      environment: process.env.NODE_ENV
     });
   });
   app2.post("/api/register", async (req, res) => {
@@ -863,18 +922,52 @@ function setupAuth(app2) {
       if (!email || !password || !firstName || !lastName) {
         return res.status(400).json({ message: "Tutti i campi sono obbligatori" });
       }
-      const mockUser = {
-        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        email,
-        firstName,
-        lastName,
+      if (!validateEmail(email)) {
+        return res.status(400).json({ message: "Formato email non valido" });
+      }
+      if (!validatePassword(password)) {
+        return res.status(400).json({ message: "La password deve essere tra 6 e 128 caratteri" });
+      }
+      if (!validateName(firstName)) {
+        return res.status(400).json({ message: "Nome non valido (2-50 caratteri, solo lettere)" });
+      }
+      if (!validateName(lastName)) {
+        return res.status(400).json({ message: "Cognome non valido (2-50 caratteri, solo lettere)" });
+      }
+      if (await getMockUserByEmail(email)) {
+        return res.status(400).json({ message: "Un utente con questa email esiste gi\xE0" });
+      }
+      const hashedPassword = await hashPassword(password);
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const newUser = {
+        id: userId,
+        email: email.toLowerCase(),
+        // ✅ Normalize email
+        password: hashedPassword,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         isAdmin: false,
         createdAt: (/* @__PURE__ */ new Date()).toISOString()
       };
-      console.log("\u2705 Mock user created:", mockUser.id);
-      return res.status(201).json({
-        message: "Registrazione completata con successo",
-        user: mockUser
+      mockUsers.set(userId, newUser);
+      console.log("\u2705 User registered and saved:", userId);
+      req.login(newUser, (err) => {
+        if (err) {
+          console.error("\u{1F4A5} Auto-login error after registration:", err);
+          const { password: _2, ...userResponse2 } = newUser;
+          return res.status(201).json({
+            message: "Registrazione completata con successo. Effettua il login.",
+            user: userResponse2,
+            autoLogin: false
+          });
+        }
+        console.log("\u2705 Registration and auto-login successful");
+        const { password: _, ...userResponse } = newUser;
+        return res.status(201).json({
+          message: "Registrazione completata con successo",
+          user: userResponse,
+          autoLogin: true
+        });
       });
     } catch (error) {
       console.error("\u{1F4A5} Registration error:", error);
@@ -882,39 +975,70 @@ function setupAuth(app2) {
     }
   });
   app2.post("/api/login", (req, res, next) => {
+    console.log("\u{1F510} Login endpoint called with:", { email: req.body?.email });
     passport.authenticate("local", (err, user, info) => {
-      if (err) return next(err);
-      if (!user) {
-        return res.status(401).json({ message: info?.message || "Credenziali non valide" });
+      if (err) {
+        console.error("\u{1F4A5} Passport authentication error:", err);
+        return res.status(500).json({ message: "Errore del server durante l'autenticazione" });
       }
+      if (!user) {
+        console.log("\u274C Login failed:", info?.message);
+        return res.status(401).json({
+          message: info?.message || "Credenziali non valide",
+          success: false
+        });
+      }
+      console.log("\u{1F510} User found, attempting session login for:", user.email);
       req.login(user, (err2) => {
-        if (err2) return next(err2);
+        if (err2) {
+          console.error("\u{1F4A5} Session login error:", err2);
+          return res.status(500).json({ message: "Errore nella creazione della sessione" });
+        }
+        console.log("\u2705 Login successful, user authenticated:", user.email);
+        console.log("\u{1F50D} Session info:", {
+          sessionId: req.sessionID,
+          isAuthenticated: req.isAuthenticated(),
+          userId: req.user?.id
+        });
+        const { password: _, ...userResponse } = user;
         res.json({
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          isAdmin: user.isAdmin
+          ...userResponse,
+          success: true
         });
       });
     })(req, res, next);
   });
   app2.post("/api/logout", (req, res, next) => {
     req.logout((err) => {
-      if (err) return next(err);
-      res.json({ message: "Logout effettuato con successo" });
+      if (err) {
+        console.error("\u{1F4A5} Logout error:", err);
+        return res.status(500).json({ message: "Errore durante il logout" });
+      }
+      req.session.destroy((err2) => {
+        if (err2) {
+          console.error("\u{1F4A5} Session destroy error:", err2);
+        }
+        res.clearCookie("gameall.session");
+        res.json({ message: "Logout effettuato con successo" });
+      });
     });
   });
   app2.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Non autenticato" });
     }
+    const { password: _, ...userResponse } = req.user;
+    res.json(userResponse);
+  });
+  app2.get("/api/debug/users", (req, res) => {
+    const users2 = Array.from(mockUsers.values()).map((user) => {
+      const { password: _, ...userWithoutPassword } = user;
+      return userWithoutPassword;
+    });
     res.json({
-      id: req.user.id,
-      email: req.user.email,
-      firstName: req.user.firstName,
-      lastName: req.user.lastName,
-      isAdmin: req.user.isAdmin
+      totalUsers: users2.length,
+      users: users2,
+      environment: process.env.NODE_ENV
     });
   });
 }
@@ -1871,13 +1995,43 @@ var vite_config_default = defineConfig({
   root: path3.resolve(import.meta.dirname, "client"),
   build: {
     outDir: path3.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true
+    emptyOutDir: true,
+    // ✅ Fixed build optimizations with correct module names
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          ui: ["@radix-ui/react-dialog", "@radix-ui/react-toast", "@radix-ui/react-tabs"],
+          auth: ["@tanstack/react-query", "wouter"]
+        }
+      }
+    },
+    // ✅ Increase chunk size warning limit
+    chunkSizeWarningLimit: 1e3
   },
   server: {
     fs: {
       strict: true,
       deny: ["**/.*"]
-    }
+    },
+    // ✅ Better development server configuration
+    proxy: {
+      "/api": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+        secure: false
+      }
+    },
+    // ✅ Enable CORS for development
+    cors: true
+  },
+  // ✅ Define environment variables
+  define: {
+    __DEV__: JSON.stringify(process.env.NODE_ENV === "development")
+  },
+  // ✅ Better error handling
+  esbuild: {
+    logOverride: { "this-is-undefined-in-esm": "silent" }
   }
 });
 
@@ -1950,18 +2104,45 @@ function serveStatic(app2) {
 
 // server/index.ts
 var app = express3();
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.removeHeader("X-Powered-By");
+  next();
+});
+var corsOrigins = [
+  "https://gameall123-new.onrender.com",
+  "http://localhost:5173",
+  // Vite dev server
+  "http://localhost:3000",
+  // Alternative dev server
+  "http://localhost:5000"
+  // Local server
+];
 app.use(cors({
-  origin: "https://gameall123-new.onrender.com",
-  credentials: true
+  origin: process.env.NODE_ENV === "production" ? "https://gameall123-new.onrender.com" : corsOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
-app.use(express3.json());
-app.use(express3.urlencoded({ extended: false }));
+app.use(express3.json({ limit: "10mb" }));
+app.use(express3.urlencoded({ extended: false, limit: "10mb" }));
+app.use((req, res, next) => {
+  res.setTimeout(3e4, () => {
+    console.log("Request has timed out.");
+    res.status(408).json({ message: "Request timeout" });
+  });
+  next();
+});
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
     version: "2.1.0",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV
   });
 });
 app.use((req, res, next) => {
@@ -1977,11 +2158,14 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path5.startsWith("/api")) {
       let logLine = `${req.method} ${path5} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (res.statusCode >= 400) {
+        logLine += ` [ERROR]`;
+        if (capturedJsonResponse) {
+          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        }
       }
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "\u2026";
+      if (logLine.length > 200) {
+        logLine = logLine.slice(0, 199) + "\u2026";
       }
       log(logLine);
     }
@@ -1989,24 +2173,51 @@ app.use((req, res, next) => {
   next();
 });
 (async () => {
-  const server = await registerRoutes(app);
-  app.use((err, _req, res, _next) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    res.status(status).json({ message });
-    throw err;
-  });
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+  try {
+    const server = await registerRoutes(app);
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
+    app.use((err, req, res, next) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      console.error(`Error ${status}: ${message}`, {
+        url: req.url,
+        method: req.method,
+        userAgent: req.get("User-Agent"),
+        stack: err.stack
+      });
+      const clientMessage = process.env.NODE_ENV === "production" && status === 500 ? "Si \xE8 verificato un errore interno del server" : message;
+      res.status(status).json({
+        message: clientMessage,
+        ...process.env.NODE_ENV === "development" && { stack: err.stack }
+      });
+    });
+    app.use("/api/*", (req, res) => {
+      res.status(404).json({
+        message: "API endpoint non trovato",
+        path: req.originalUrl
+      });
+    });
+    const port = parseInt(process.env.PORT || "5000");
+    server.listen({
+      port,
+      host: "0.0.0.0",
+      reusePort: true
+    }, () => {
+      log(`\u{1F680} Server running on port ${port} in ${process.env.NODE_ENV || "development"} mode`);
+    });
+    process.on("SIGTERM", () => {
+      log("SIGTERM received, shutting down gracefully");
+      server.close(() => {
+        log("Process terminated");
+        process.exit(0);
+      });
+    });
+  } catch (error) {
+    console.error("\u274C Failed to start server:", error);
+    process.exit(1);
   }
-  const port = parseInt(process.env.PORT || "5000");
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true
-  }, () => {
-    log(`serving on port ${port}`);
-  });
 })();

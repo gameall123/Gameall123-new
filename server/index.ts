@@ -100,6 +100,13 @@ app.use((req, res, next) => {
   try {
     const server = await registerRoutes(app);
 
+    // ✅ Static serving / Vite setup (BEFORE error handlers)
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
+
     // ✅ Enhanced error handling middleware
     app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -124,20 +131,13 @@ app.use((req, res, next) => {
       });
     });
 
-    // ✅ 404 handler
-    app.use('*', (req: Request, res: Response) => {
+    // ✅ 404 handler for API routes only
+    app.use('/api/*', (req: Request, res: Response) => {
       res.status(404).json({ 
-        message: "Endpoint non trovato",
+        message: "API endpoint non trovato",
         path: req.originalUrl 
       });
     });
-
-    // ✅ Static serving / Vite setup
-    if (app.get("env") === "development") {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-    }
 
     // ✅ Start server - Dynamic port for Render
     const port = parseInt(process.env.PORT || "5000");
