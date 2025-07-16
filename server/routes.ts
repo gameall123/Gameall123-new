@@ -41,7 +41,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/debug/status", (_req, res) => {
     res.json({
       status: "server_running",
-      version: "2.1.0",
+      version: "2.1.1",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,

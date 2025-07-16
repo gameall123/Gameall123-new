@@ -58,7 +58,7 @@ app.use((req, res, next) => {
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ 
     status: 'ok', 
-    version: '2.1.0',
+    version: '2.1.1',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
