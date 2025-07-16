@@ -26,10 +26,33 @@ async function createPullRequest(branchName, title, body) {
     })
   });
   const data = await res.json();
-  if (data.html_url) {
+  if (data.html_url && data.number) {
     console.log(`✅ Pull request creata: ${data.html_url}`);
+    await mergePullRequest(data.number);
   } else {
     console.error('❌ Errore creazione PR:', data);
+  }
+}
+
+async function mergePullRequest(prNumber) {
+  const fetch = (await import('node-fetch')).default;
+  const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${prNumber}/merge`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `token ${GITHUB_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'GameAll-PR-Script'
+    },
+    body: JSON.stringify({
+      commit_title: 'Merge automatico da chat',
+      merge_method: 'squash'
+    })
+  });
+  const data = await res.json();
+  if (data.merged) {
+    console.log(`✅ Pull request #${prNumber} mergiata automaticamente!`);
+  } else {
+    console.error('❌ Errore merge PR:', data);
   }
 }
 
