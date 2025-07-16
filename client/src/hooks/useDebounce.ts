@@ -1,13 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 
+/**
+ * Hook per debounce di valori - utile per ricerche in tempo reale
+ * @param value - Il valore da debounce
+ * @param delay - Delay in millisecondi
+ * @returns Il valore debounced
+ */
 export function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
   useEffect(() => {
+    // Set debounced value dopo il delay
     const handler = setTimeout(() => {
       setDebouncedValue(value);
     }, delay);
 
+    // Cleanup timeout se value cambia prima del delay
     return () => {
       clearTimeout(handler);
     };
