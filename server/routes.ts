@@ -50,6 +50,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Simple test endpoint for registration debugging
+  app.post("/api/test/register", (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      console.log('🧪 Test registration endpoint called');
+      console.log('📋 Body received:', req.body);
+      
+      const { email, password, firstName, lastName } = req.body || {};
+      
+      if (!email || !password || !firstName || !lastName) {
+        return res.status(400).json({
+          message: "Missing fields",
+          received: { email: !!email, password: !!password, firstName: !!firstName, lastName: !!lastName }
+        });
+      }
+      
+      // Simple mock response without database operations
+      const mockUser = {
+        id: `test_${Date.now()}`,
+        email,
+        firstName,
+        lastName,
+        isAdmin: false,
+        createdAt: new Date().toISOString()
+      };
+      
+      return res.status(201).json({
+        message: "Test registration successful",
+        user: mockUser
+      });
+    } catch (error) {
+      console.error('💥 Test registration error:', error);
+      return res.status(500).json({
+        message: "Test registration failed",
+        error: error.message
+      });
+    }
+  });
+
   // Serve static files from uploads directory
   app.use('/uploads', (req, res, next) => {
     // Add security headers for uploaded files

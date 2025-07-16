@@ -23,67 +23,98 @@ try {
 } catch (error) {
   console.warn('Database connection failed:', error);
   // In production without DATABASE_URL, we'll create a mock database interface for demo
-  console.log('Using mock database for demo purposes...');
+  console.log('🔧 Using mock database for demo purposes...');
   
-  // Mock database with in-memory storage
-  let mockUsers: any[] = [];
-  let mockProducts: any[] = [];
-  let mockOrders: any[] = [];
-  let userIdCounter = 1;
+  // Mock database with in-memory storage - more robust implementation
+  const mockData = {
+    users: [] as any[],
+    products: [] as any[],
+    orders: [] as any[],
+    userIdCounter: 1
+  };
   
-     db = {
-     select: (columns?: any) => ({
-       from: (table: any) => ({
-         where: (condition: any) => {
-           console.log('🔍 Mock DB query - table:', table.name || 'unknown', 'condition:', condition);
-           
-           if (table === schema.users) {
-             // Simple mock: return all users for now, let the app filter
-             console.log('👥 Returning mockUsers:', mockUsers.length, 'users');
-             return Promise.resolve(mockUsers);
-           }
-           if (table === schema.products) {
-             return Promise.resolve(mockProducts);
-           }
-           return Promise.resolve([]);
-         }
-       })
-     }),
-     insert: (table: any) => ({
-       values: (data: any) => ({
-         returning: () => {
-           console.log('💾 Mock DB insert - table:', table.name || 'unknown', 'data:', data);
-           
-           if (table === schema.users) {
-             const newUser = { 
-               ...data, 
-               id: data.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-             };
-             mockUsers.push(newUser);
-             console.log('✅ User inserted:', newUser);
-             return Promise.resolve([newUser]);
-           }
-           return Promise.resolve([{ ...data, id: userIdCounter++ }]);
-         }
-       })
-     }),
-     update: (table: any) => ({
-       set: (data: any) => ({
-         where: (condition: any) => ({
-           returning: () => {
-             console.log('📝 Mock DB update');
-             return Promise.resolve([data]);
-           }
-         })
-       })
-     }),
-     delete: (table: any) => ({
-       where: (condition: any) => {
-         console.log('🗑️ Mock DB delete');
-         return Promise.resolve([]);
-       }
-     }),
-   };
+  console.log('✅ Mock database initialized');
+  
+           db = {
+      select: (columns?: any) => ({
+        from: (table: any) => ({
+          where: (condition: any) => {
+            try {
+              console.log('🔍 Mock DB SELECT - table:', table?.name || 'unknown');
+              
+              if (table === schema.users) {
+                console.log('👥 Returning users, count:', mockData.users.length);
+                return Promise.resolve(mockData.users);
+              }
+              if (table === schema.products) {
+                console.log('📦 Returning products, count:', mockData.products.length);
+                return Promise.resolve(mockData.products);
+              }
+              console.log('❓ Unknown table, returning empty array');
+              return Promise.resolve([]);
+            } catch (error) {
+              console.error('💥 Mock DB SELECT error:', error);
+              return Promise.resolve([]);
+            }
+          }
+        })
+      }),
+      insert: (table: any) => ({
+        values: (data: any) => ({
+          returning: () => {
+            try {
+              console.log('💾 Mock DB INSERT - table:', table?.name || 'unknown');
+              console.log('📋 Insert data:', JSON.stringify(data, null, 2));
+              
+              if (table === schema.users) {
+                const newUser = { 
+                  ...data, 
+                  id: data.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  createdAt: new Date().toISOString()
+                };
+                mockData.users.push(newUser);
+                console.log('✅ User inserted successfully:', { id: newUser.id, email: newUser.email });
+                console.log('📊 Total users now:', mockData.users.length);
+                return Promise.resolve([newUser]);
+              }
+              
+              const newItem = { ...data, id: mockData.userIdCounter++ };
+              console.log('✅ Generic item inserted:', newItem);
+              return Promise.resolve([newItem]);
+            } catch (error) {
+              console.error('💥 Mock DB INSERT error:', error);
+              return Promise.reject(error);
+            }
+          }
+        })
+      }),
+      update: (table: any) => ({
+        set: (data: any) => ({
+          where: (condition: any) => ({
+            returning: () => {
+              try {
+                console.log('📝 Mock DB UPDATE - table:', table?.name || 'unknown');
+                return Promise.resolve([{ ...data, updatedAt: new Date().toISOString() }]);
+              } catch (error) {
+                console.error('💥 Mock DB UPDATE error:', error);
+                return Promise.reject(error);
+              }
+            }
+          })
+        })
+      }),
+      delete: (table: any) => ({
+        where: (condition: any) => {
+          try {
+            console.log('🗑️ Mock DB DELETE - table:', table?.name || 'unknown');
+            return Promise.resolve([]);
+          } catch (error) {
+            console.error('💥 Mock DB DELETE error:', error);
+            return Promise.reject(error);
+          }
+        }
+      }),
+    };
 }
 
 export { pool, db };

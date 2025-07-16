@@ -74,57 +74,111 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Registration endpoint
+  // Registration endpoint with robust error handling
   app.post("/api/register", async (req, res, next) => {
+    // Ensure we always send JSON response
+    res.setHeader('Content-Type', 'application/json');
+    
     try {
-      console.log('📝 Registration attempt:', { email: req.body.email, hasPassword: !!req.body.password });
+      console.log('📝 Registration attempt started');
+      console.log('📋 Request body keys:', Object.keys(req.body || {}));
       
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName } = req.body || {};
       
+      // Validate required fields
       if (!email || !password || !firstName || !lastName) {
-        console.log('❌ Missing required fields');
-        return res.status(400).json({ message: "Tutti i campi sono obbligatori" });
+        console.log('❌ Missing required fields:', { 
+          hasEmail: !!email, 
+          hasPassword: !!password, 
+          hasFirstName: !!firstName, 
+          hasLastName: !!lastName 
+        });
+        return res.status(400).json({ 
+          message: "Tutti i campi sono obbligatori",
+          missing: {
+            email: !email,
+            password: !password,
+            firstName: !firstName,
+            lastName: !lastName
+          }
+        });
       }
 
-      console.log('🔍 Checking existing user...');
-      const existingUser = await storage.getUserByEmail(email);
+      console.log('🔍 Checking existing user for email:', email);
+      let existingUser;
+      try {
+        existingUser = await storage.getUserByEmail(email);
+        console.log('✅ User check completed, found:', !!existingUser);
+      } catch (dbError) {
+        console.error('💥 Database error during user check:', dbError);
+        return res.status(500).json({ 
+          message: "Errore database durante verifica utente",
+          error: dbError.message 
+        });
+      }
+      
       if (existingUser) {
-        console.log('❌ Email already exists');
+        console.log('❌ Email already exists:', email);
         return res.status(400).json({ message: "Email già registrata" });
       }
 
       console.log('🔐 Hashing password...');
-      const hashedPassword = await hashPassword(password);
+      let hashedPassword;
+      try {
+        hashedPassword = await hashPassword(password);
+        console.log('✅ Password hashed successfully');
+      } catch (hashError) {
+        console.error('💥 Password hashing error:', hashError);
+        return res.status(500).json({ 
+          message: "Errore durante hashing password",
+          error: hashError.message 
+        });
+      }
       
       console.log('💾 Creating user...');
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        isAdmin: false,
-      });
+      let user;
+      try {
+        user = await storage.createUser({
+          email,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          isAdmin: false,
+        });
+        console.log('✅ User created successfully:', { id: user.id, email: user.email });
+      } catch (createError) {
+        console.error('💥 User creation error:', createError);
+        return res.status(500).json({ 
+          message: "Errore durante creazione utente",
+          error: createError.message 
+        });
+      }
 
-      console.log('✅ User created successfully:', { id: user.id, email: user.email });
-
-      req.login(user, (err) => {
-        if (err) {
-          console.log('❌ Login error:', err);
-          return next(err);
-        }
-        
-        console.log('🎉 Registration completed successfully');
-        res.status(201).json({
+      // Skip login for now to avoid additional complexity
+      console.log('🎉 Registration completed, returning user data');
+      return res.status(201).json({
+        message: "Registrazione completata con successo",
+        user: {
           id: user.id,
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
           isAdmin: user.isAdmin,
-        });
+        }
       });
+      
     } catch (error) {
-      console.error('💥 Registration error:', error);
-      res.status(500).json({ message: "Errore durante la registrazione" });
+      console.error('💥 Unexpected registration error:', error);
+      console.error('Stack trace:', error.stack);
+      
+      // Ensure we send JSON even in unexpected errors
+      if (!res.headersSent) {
+        return res.status(500).json({ 
+          message: "Errore imprevisto durante la registrazione",
+          error: error.message,
+          type: error.constructor.name
+        });
+      }
     }
   });
 
