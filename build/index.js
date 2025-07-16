@@ -889,6 +889,10 @@ function setupAuth(app2) {
             console.log("\u274C User not found:", email);
             return done(null, false, { message: "Email o password non validi" });
           }
+          if (!user.password) {
+            console.log("\u274C User has no password (social auth):", email);
+            return done(null, false, { message: "Email o password non validi" });
+          }
           const passwordMatch = await comparePasswords(password, user.password);
           if (!passwordMatch) {
             console.log("\u274C Wrong password for:", email);
@@ -952,8 +956,17 @@ function setupAuth(app2) {
         password: hashedPassword,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        profileImageUrl: null,
+        phone: null,
+        bio: null,
+        shippingAddress: {},
+        paymentMethod: {},
+        provider: "email",
+        providerId: null,
         isAdmin: false,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        emailVerified: false,
+        createdAt: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
       };
       mockUsers.set(userId, newUser);
       console.log("\u2705 User registered and saved:", userId);
@@ -1303,7 +1316,7 @@ async function registerRoutes(app2) {
     } catch (error) {
       res.status(500).json({
         message: "Test registration failed",
-        error: error.message
+        error: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
