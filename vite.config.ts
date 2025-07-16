@@ -27,12 +27,13 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
-    // ✅ Better build optimizations
+    // ✅ Fixed build optimizations with correct module names
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-button', '@radix-ui/react-toast'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-toast', '@radix-ui/react-tabs'],
+          auth: ['@tanstack/react-query', 'wouter'],
         },
       },
     },
