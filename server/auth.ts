@@ -17,7 +17,7 @@ declare global {
 
 const scryptAsync = promisify(scrypt);
 
-// ✅ Mock user storage in memory for development
+// ✅ Mock user storage in memory for development with limits
 const mockUsers = new Map<string, {
   id: string;
   email: string;
@@ -36,6 +36,28 @@ const mockUsers = new Map<string, {
   createdAt: Date | null;
   updatedAt: Date | null;
 }>();
+
+// Limit mock users to prevent memory issues
+const MAX_MOCK_USERS = 100;
+
+// Cleanup old users periodically
+setInterval(() => {
+  if (mockUsers.size > MAX_MOCK_USERS) {
+    const usersArray = Array.from(mockUsers.entries());
+    const sortedUsers = usersArray.sort((a, b) => {
+      const dateA = a[1].createdAt?.getTime() || 0;
+      const dateB = b[1].createdAt?.getTime() || 0;
+      return dateA - dateB;
+    });
+    
+    const usersToRemove = sortedUsers.slice(0, mockUsers.size - MAX_MOCK_USERS);
+    usersToRemove.forEach(([id]) => {
+      mockUsers.delete(id);
+    });
+    
+    console.log(`🧹 Cleaned up ${usersToRemove.length} old mock users`);
+  }
+}, 5 * 60 * 1000); // Every 5 minutes
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
@@ -115,10 +137,11 @@ export function setupAuth(app: Express) {
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // Reduced to 1 day
       sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     },
     rolling: true,
+    unset: 'destroy', // Destroy session when unset
   };
 
   app.set("trust proxy", 1);
@@ -224,6 +247,24 @@ export function setupAuth(app: Express) {
       // Check if user already exists
       if (await getMockUserByEmail(email)) {
         return res.status(400).json({ message: "Un utente con questa email esiste già" });
+      }
+
+      // Check if we've reached the limit
+      if (mockUsers.size >= MAX_MOCK_USERS) {
+        console.warn('⚠️ Mock users limit reached, cleaning up old users');
+        // Force cleanup
+        const usersArray = Array.from(mockUsers.entries());
+        const sortedUsers = usersArray.sort((a, b) => {
+          const dateA = a[1].createdAt?.getTime() || 0;
+          const dateB = b[1].createdAt?.getTime() || 0;
+          return dateA - dateB;
+        });
+        
+        const usersToRemove = sortedUsers.slice(0, Math.floor(MAX_MOCK_USERS * 0.2)); // Remove 20%
+        usersToRemove.forEach(([id]) => {
+          mockUsers.delete(id);
+        });
+        console.log(`🧹 Emergency cleanup: removed ${usersToRemove.length} users`);
       }
 
       // ✅ Create user with hashed password and save to mock storage
@@ -421,6 +462,25 @@ export function setupAuth(app: Express) {
       console.error('💥 Test registration error:', error);
       res.status(500).json({ 
         message: "Test registration failed",
+        error: error.message
+      });
+    }
+  });
+
+  // ✅ Cleanup mock users endpoint
+  app.post("/api/cleanup-users", (req, res) => {
+    try {
+      const beforeCount = mockUsers.size;
+      mockUsers.clear();
+      console.log(`🧹 Manual cleanup: removed ${beforeCount} users`);
+      res.json({
+        message: "Mock users cleaned up successfully",
+        removedCount: beforeCount
+      });
+    } catch (error) {
+      console.error('💥 Cleanup error:', error);
+      res.status(500).json({ 
+        message: "Cleanup failed",
         error: error.message
       });
     }

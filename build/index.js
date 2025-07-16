@@ -804,6 +804,22 @@ import RedisStore from "connect-redis";
 import { createClient } from "redis";
 var scryptAsync = promisify(scrypt);
 var mockUsers = /* @__PURE__ */ new Map();
+var MAX_MOCK_USERS = 100;
+setInterval(() => {
+  if (mockUsers.size > MAX_MOCK_USERS) {
+    const usersArray = Array.from(mockUsers.entries());
+    const sortedUsers = usersArray.sort((a, b) => {
+      const dateA = a[1].createdAt?.getTime() || 0;
+      const dateB = b[1].createdAt?.getTime() || 0;
+      return dateA - dateB;
+    });
+    const usersToRemove = sortedUsers.slice(0, mockUsers.size - MAX_MOCK_USERS);
+    usersToRemove.forEach(([id]) => {
+      mockUsers.delete(id);
+    });
+    console.log(`\u{1F9F9} Cleaned up ${usersToRemove.length} old mock users`);
+  }
+}, 5 * 60 * 1e3);
 async function hashPassword(password) {
   const salt = randomBytes(16).toString("hex");
   const buf = await scryptAsync(password, salt, 64);
@@ -868,10 +884,13 @@ function setupAuth(app2) {
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1e3,
+      maxAge: 24 * 60 * 60 * 1e3,
+      // Reduced to 1 day
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax"
     },
-    rolling: true
+    rolling: true,
+    unset: "destroy"
+    // Destroy session when unset
   };
   app2.set("trust proxy", 1);
   app2.use(session(sessionSettings));
@@ -953,6 +972,20 @@ function setupAuth(app2) {
       }
       if (await getMockUserByEmail(email)) {
         return res.status(400).json({ message: "Un utente con questa email esiste gi\xE0" });
+      }
+      if (mockUsers.size >= MAX_MOCK_USERS) {
+        console.warn("\u26A0\uFE0F Mock users limit reached, cleaning up old users");
+        const usersArray = Array.from(mockUsers.entries());
+        const sortedUsers = usersArray.sort((a, b) => {
+          const dateA = a[1].createdAt?.getTime() || 0;
+          const dateB = b[1].createdAt?.getTime() || 0;
+          return dateA - dateB;
+        });
+        const usersToRemove = sortedUsers.slice(0, Math.floor(MAX_MOCK_USERS * 0.2));
+        usersToRemove.forEach(([id]) => {
+          mockUsers.delete(id);
+        });
+        console.log(`\u{1F9F9} Emergency cleanup: removed ${usersToRemove.length} users`);
       }
       const hashedPassword = await hashPassword(password);
       const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1113,6 +1146,23 @@ function setupAuth(app2) {
       console.error("\u{1F4A5} Test registration error:", error);
       res.status(500).json({
         message: "Test registration failed",
+        error: error.message
+      });
+    }
+  });
+  app2.post("/api/cleanup-users", (req, res) => {
+    try {
+      const beforeCount = mockUsers.size;
+      mockUsers.clear();
+      console.log(`\u{1F9F9} Manual cleanup: removed ${beforeCount} users`);
+      res.json({
+        message: "Mock users cleaned up successfully",
+        removedCount: beforeCount
+      });
+    } catch (error) {
+      console.error("\u{1F4A5} Cleanup error:", error);
+      res.status(500).json({
+        message: "Cleanup failed",
         error: error.message
       });
     }
