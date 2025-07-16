@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -27,10 +28,14 @@ const corsOrigins = [
   "http://localhost:5000"  // Local server
 ];
 
+app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? "https://gameall123-new.onrender.com"
-    : corsOrigins,
+  origin: process.env.NODE_ENV === 'production'
+    ? [
+        'https://gamesall.top',
+        'https://www.gamesall.top',
+      ]
+    : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

@@ -285,3 +285,15 @@ Questo progetto è rilasciato sotto licenza MIT. Vedi il file `LICENSE` per i de
 **⭐ Se questo progetto ti è utile, lascia una stella su GitHub!**
 
 *Sviluppato con ❤️ per la community gaming italiana*
+
+# Variabili d'ambiente richieste per deploy Render/Cloudflare
+
+- SESSION_SECRET: Segreto per le sessioni
+- REDIS_URL: URL di connessione a Redis
+- DATABASE_URL: URL del database PostgreSQL
+- NODE_ENV: production
+- PORT: 10000 (o quello richiesto da Render)
+
+# Per Cloudflare e dominio custom
+- Assicurati che il proxy Cloudflare sia attivo e che il dominio punti correttamente a Render
+- I cookie sono impostati per .gamesall.top
