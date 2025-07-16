@@ -349,4 +349,14 @@ export function setupAuth(app: Express) {
       environment: process.env.NODE_ENV
     });
   });
+
+  // Health check per Redis/session
+  app.get('/api/health/session', async (req, res) => {
+    try {
+      await redisClient.ping();
+      res.json({ status: 'ok', redis: true });
+    } catch (err) {
+      res.status(500).json({ status: 'error', redis: false, error: err?.message });
+    }
+  });
 }
