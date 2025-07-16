@@ -50,39 +50,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Simple test endpoint for registration debugging
+  // Simple test endpoints
+  app.get("/api/test", (req, res) => {
+    res.json({ message: "Server is working", timestamp: new Date().toISOString() });
+  });
+  
   app.post("/api/test/register", (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
     try {
       console.log('🧪 Test registration endpoint called');
-      console.log('📋 Body received:', req.body);
       
-      const { email, password, firstName, lastName } = req.body || {};
-      
-      if (!email || !password || !firstName || !lastName) {
-        return res.status(400).json({
-          message: "Missing fields",
-          received: { email: !!email, password: !!password, firstName: !!firstName, lastName: !!lastName }
-        });
-      }
-      
-      // Simple mock response without database operations
       const mockUser = {
         id: `test_${Date.now()}`,
-        email,
-        firstName,
-        lastName,
-        isAdmin: false,
-        createdAt: new Date().toISOString()
+        email: "test@example.com",
+        firstName: "Test",
+        lastName: "User",
+        isAdmin: false
       };
       
-      return res.status(201).json({
+      res.json({
         message: "Test registration successful",
         user: mockUser
       });
     } catch (error) {
-      console.error('💥 Test registration error:', error);
-      return res.status(500).json({
+      res.status(500).json({
         message: "Test registration failed",
         error: error.message
       });
