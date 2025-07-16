@@ -5,18 +5,21 @@ import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import winston from "winston";
 
 const viteLogger = createLogger();
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
+const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, level, message }) => `${timestamp} [${level}] ${message}`)
+  ),
+  transports: [new winston.transports.Console()],
+});
 
-  console.log(`${formattedTime} [${source}] ${message}`);
+export function log(message: string, source = "express") {
+  logger.info(`[${source}] ${message}`);
 }
 
 export async function setupVite(app: Express, server: Server) {
