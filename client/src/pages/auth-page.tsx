@@ -76,24 +76,14 @@ export default function AuthPage() {
     },
   });
 
-  const onLogin = async (data: LoginFormData) => {
-    try {
-      console.log("🔐 Starting login process for:", data.email);
-      await loginMutation.mutateAsync(data);
-      console.log("✅ Login completed successfully");
-    } catch (error) {
-      console.error("❌ Login error:", error);
-    }
+  const onLogin = (data: LoginFormData) => {
+    console.log("🔐 Starting login process for:", data.email);
+    loginMutation.mutate(data);
   };
 
-  const onRegister = async (data: RegisterFormData) => {
-    try {
-      console.log("📝 Starting registration process for:", data.email);
-      await registerMutation.mutateAsync(data);
-      console.log("✅ Registration completed successfully");
-    } catch (error) {
-      console.error("❌ Registration error:", error);
-    }
+  const onRegister = (data: RegisterFormData) => {
+    console.log("📝 Starting registration process for:", data.email);
+    registerMutation.mutate(data);
   };
 
   return (
@@ -262,6 +252,7 @@ export default function AuthPage() {
                         type="submit"
                         className="w-full h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                         disabled={loginMutation.isPending}
+                        onClick={() => console.log("🔍 Login button clicked!")}
                       >
                         {loginMutation.isPending ? "Accesso in corso..." : "Accedi"}
                       </Button>
