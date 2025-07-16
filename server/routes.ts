@@ -60,7 +60,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ 
       message: "Auth API is working", 
       timestamp: new Date().toISOString(),
-      version: "2.1.1",
+      version: "2.1.2",
+      environment: process.env.NODE_ENV
+    });
+  });
+
+  // Debug endpoint to verify API routing fix
+  app.get("/api/debug/routing", (req, res) => {
+    res.json({ 
+      message: "API routing fix applied successfully", 
+      timestamp: new Date().toISOString(),
+      version: "2.1.2",
+      fixApplied: true,
       environment: process.env.NODE_ENV
     });
   });

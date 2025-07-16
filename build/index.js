@@ -1410,7 +1410,16 @@ async function registerRoutes(app2) {
     res.json({
       message: "Auth API is working",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      version: "2.1.1",
+      version: "2.1.2",
+      environment: process.env.NODE_ENV
+    });
+  });
+  app2.get("/api/debug/routing", (req, res) => {
+    res.json({
+      message: "API routing fix applied successfully",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      version: "2.1.2",
+      fixApplied: true,
       environment: process.env.NODE_ENV
     });
   });
@@ -2274,7 +2283,7 @@ app.use((req, res, next) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
-    version: "2.1.1",
+    version: "2.1.2",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
