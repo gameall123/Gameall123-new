@@ -1,5 +1,9 @@
 node_modules
 dist
+build
+*.js
+!postcss.config.js
+!vite.config.ts
 .DS_Store
 server/public
 vite.config.ts.*

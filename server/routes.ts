@@ -21,6 +21,7 @@ import express from "express";
 
 // Import new authentication middleware
 import { authenticate } from "./auth";
+import { Request } from "express";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -109,7 +110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User profile update route
   app.put('/api/user', authenticate, sanitizeHtml, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const updateData = {
         phone: req.body.phone,
         bio: req.body.bio,
@@ -242,7 +243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/products/:id", authenticate, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
+      const user = await storage.getUser((req.user as any)?.id);
       if (!user?.isAdmin) {
         return res.status(403).json({ message: "Admin access required" });
       }
@@ -259,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Cart routes
   app.get("/api/cart", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const cartItems = await storage.getCartItems(userId);
       res.json(cartItems);
     } catch (error) {
@@ -270,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/cart", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const cartItemData = insertCartItemSchema.parse({
         ...req.body,
         userId
@@ -309,7 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Order routes
   app.get("/api/orders", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const user = await storage.getUser(userId);
       
       let orders;
@@ -328,7 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/orders", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const orderData = insertOrderSchema.parse({
         ...req.body,
         userId
@@ -361,7 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/orders/:id/status", authenticate, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
+      const user = await storage.getUser((req.user as any)?.id);
       if (!user?.isAdmin) {
         return res.status(403).json({ message: "Admin access required" });
       }
@@ -552,7 +553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     validateRequest(insertReviewSchema),
     async (req: any, res) => {
       try {
-        const userId = req.user.id;
+        const userId = (req.user as any)?.id;
         const reviewData = { ...req.body, userId };
         const review = await storage.createReview(reviewData);
         res.json(review);
@@ -571,7 +572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     async (req: any, res) => {
       try {
         const id = parseInt(req.params.id);
-        const userId = req.user.id;
+        const userId = (req.user as any)?.id;
         const user = await storage.getUser(userId);
         
         // Check if user owns the review or is admin
@@ -594,7 +595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/reviews/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const user = await storage.getUser(userId);
       
       // Check if user owns the review or is admin
@@ -616,7 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Wishlist routes
   app.get("/api/wishlist", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const wishlist = await storage.getWishlist(userId);
       res.json(wishlist);
     } catch (error) {
@@ -631,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     validateRequest(insertWishlistSchema),
     async (req: any, res) => {
       try {
-        const userId = req.user.id;
+        const userId = (req.user as any)?.id;
         const wishlistData = { ...req.body, userId };
         const wishlistItem = await storage.addToWishlist(wishlistData);
         res.json(wishlistItem);
@@ -645,7 +646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/wishlist/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       
       // Verify user owns the wishlist item
       const wishlist = await storage.getWishlist(userId);
@@ -756,7 +757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Notification routes
   app.get("/api/notifications", authenticate, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       const notifications = await storage.getNotifications(userId);
       res.json(notifications);
     } catch (error) {
@@ -784,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/notifications/:id/read", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       
       // Verify user owns the notification
       const notifications = await storage.getNotifications(userId);
@@ -805,7 +806,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/notifications/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const userId = req.user.id;
+      const userId = (req.user as any)?.id;
       
       // Verify user owns the notification
       const notifications = await storage.getNotifications(userId);
@@ -825,7 +826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/top-products", authenticate, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
+      const user = await storage.getUser((req.user as any)?.id);
       if (!user?.isAdmin) {
         return res.status(403).json({ message: "Admin access required" });
       }
@@ -840,7 +841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/recent-orders", authenticate, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
+      const user = await storage.getUser((req.user as any)?.id);
       if (!user?.isAdmin) {
         return res.status(403).json({ message: "Admin access required" });
       }

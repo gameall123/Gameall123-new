@@ -90,14 +90,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('✅ Frontend: User authenticated:', userData.email);
         return userData;
       } catch (error) {
-        console.warn('⚠️ Frontend: Auth check error:', error.message);
+        console.warn('⚠️ Frontend: Auth check error:', error instanceof Error ? error.message : 'Unknown error');
         
         // Debug: Check if we have cookies/tokens
         const hasAuthCookie = document.cookie.includes('authToken');
         console.log('🔍 Frontend Debug:', {
           hasAuthCookie,
           cookieCount: document.cookie.split(';').length,
-          error: error.message
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
         
         return null;
@@ -265,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: loginMutation.mutateAsync,
     register: registerMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
-    refreshUser,
+    refreshUser: async () => { await refreshUser(); },
     
     // Loading states
     isLoggingIn: loginMutation.isPending,

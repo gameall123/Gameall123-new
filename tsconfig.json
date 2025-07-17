@@ -1,5 +1,6 @@
 {
   "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
+  "typeRoots": ["./node_modules/@types", "./server/types"],
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
     "incremental": true,

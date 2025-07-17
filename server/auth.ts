@@ -24,7 +24,7 @@ interface User {
 }
 
 interface AuthenticatedRequest extends Request {
-  user?: User;
+  user: User;
 }
 
 // 🛡️ Validation Schemas
@@ -136,7 +136,7 @@ const authRateLimit = createRateLimit(15 * 60 * 1000, 5, 'Troppi tentativi di lo
 const registerRateLimit = createRateLimit(60 * 60 * 1000, 3, 'Troppi tentativi di registrazione. Riprova tra un\'ora.');
 
 // 🛡️ Authentication Middleware
-const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
     const cookieToken = req.cookies?.authToken;
@@ -175,7 +175,7 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
     req.user = user;
     next();
   } catch (error) {
-    console.error('💥 Authentication error:', error.message);
+    console.error('💥 Authentication error:', error instanceof Error ? error.message : 'Unknown error');
     res.status(401).json({ error: 'Token non valido' });
   }
 };
@@ -439,7 +439,7 @@ export async function setupAuth(app: Express) {
   });
 
   // 👤 Get Current User
-  app.get('/api/auth/me', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/auth/me', authenticate, (req: any, res: Response) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Non autenticato' });
     }
@@ -453,7 +453,7 @@ export async function setupAuth(app: Express) {
     const authHeader = req.headers.authorization;
     const authToken = req.cookies?.authToken;
     
-    const debugInfo = {
+    const debugInfo: any = {
       timestamp: new Date().toISOString(),
       cookies: {
         hasAuthToken: !!authToken,
@@ -484,7 +484,7 @@ export async function setupAuth(app: Express) {
       } catch (error) {
         debugInfo.tokenInfo = {
           valid: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : 'Unknown error',
         };
       }
     }
@@ -545,7 +545,7 @@ export async function setupAuth(app: Express) {
   });
 
   // 📊 Admin Endpoints
-  app.get('/api/auth/stats', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  app.get('/api/auth/stats', authenticate, (req: any, res: Response) => {
     if (!req.user?.isAdmin) {
       return res.status(403).json({ error: 'Accesso negato' });
     }
@@ -610,4 +610,4 @@ async function initializeDefaultAdmin() {
 }
 
 // Export middleware per altri moduli
-export { authenticate, SecurityUtils };
+export { authenticate, SecurityUtils, AuthenticatedRequest, User };
