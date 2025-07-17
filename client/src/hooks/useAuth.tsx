@@ -49,6 +49,10 @@ interface AuthContextType extends AuthState {
   isLoggingIn: boolean;
   isRegistering: boolean;
   isLoggingOut: boolean;
+  
+  // Callback for navigation
+  onLoginSuccess?: () => void;
+  setOnLoginSuccess: (callback: () => void) => void;
 }
 
 // 🚀 Context
@@ -58,6 +62,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [onLoginSuccess, setOnLoginSuccess] = useState<(() => void) | undefined>();
   
   // 📊 User Query con cache intelligente
   const {
@@ -135,6 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: `Bentornato, ${data.user.firstName}!`,
         duration: 3000,
       });
+      
+      // 🔄 Execute navigation callback if set
+      if (onLoginSuccess) {
+        console.log('🚀 Executing login success callback');
+        onLoginSuccess();
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -260,6 +271,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoggingIn: loginMutation.isPending,
     isRegistering: registerMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
+    
+    // Callback system
+    onLoginSuccess,
+    setOnLoginSuccess: (callback: () => void) => setOnLoginSuccess(() => callback),
   };
 
   return (

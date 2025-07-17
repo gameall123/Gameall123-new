@@ -3,6 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -164,15 +165,33 @@ function PasswordInput({
 // 🎨 Componente principale
 export default function AuthPage() {
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  const { login, register, isLoggingIn, isRegistering, isAuthenticated } = useAuth();
+  const { login, register, isLoggingIn, isRegistering, isAuthenticated, user, setOnLoginSuccess } = useAuth();
+  const [location, setLocation] = useLocation();
+  
+  // 🔄 Setup navigation callback
+  useEffect(() => {
+    const handleNavigationAfterLogin = () => {
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      const targetPath = redirect || '/home';
+      console.log('📍 Navigating after login to:', targetPath);
+      setLocation(targetPath);
+    };
+    
+    setOnLoginSuccess(handleNavigationAfterLogin);
+    
+    return () => setOnLoginSuccess(undefined);
+  }, [setLocation, setOnLoginSuccess]);
   
   // 🔄 Redirect se già autenticato
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user) {
+      console.log('🔄 User already authenticated, redirecting...', user.email);
       const redirect = new URLSearchParams(window.location.search).get('redirect');
-      window.location.href = redirect || '/home';
+      const targetPath = redirect || '/home';
+      console.log('📍 Redirecting to:', targetPath);
+      setLocation(targetPath);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user, setLocation]);
 
   // 📝 Form Login
   const loginForm = useForm<LoginForm>({
@@ -197,12 +216,17 @@ export default function AuthPage() {
     },
   });
 
-  // 🔐 Handle Login
+  // 🔐 Login Handler Ultra Sicuro
   const handleLogin = async (data: LoginForm) => {
     try {
+      console.log('🔐 Frontend: Starting login process...');
       await login(data);
+      console.log('✅ Frontend: Login completed successfully');
+      
+      // The navigation will be handled by the useAuth hook after successful login
     } catch (error) {
-      // Error handling è gestito nel hook
+      console.error('❌ Frontend: Login error:', error);
+      // Error handling is already done in the mutation
     }
   };
 

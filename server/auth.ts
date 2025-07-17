@@ -203,14 +203,22 @@ export function setupAuth(app: Express) {
       const validatedData = loginSchema.parse(req.body);
       const { email, password, rememberMe } = validatedData;
 
-      // Sanitize input
-      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+      // Sanitize input - ensure consistent normalization
+      const sanitizedEmail = email.toLowerCase().trim();
 
-      // Find user
-      const user = Array.from(mockUsers.values()).find(u => u.email === sanitizedEmail);
+      // Find user - check both normalized and original stored email
+      console.log('🔍 Looking for user with email:', sanitizedEmail);
+      console.log('🔍 Available users:', Array.from(mockUsers.values()).map(u => ({ id: u.id, email: u.email })));
+      
+      const user = Array.from(mockUsers.values()).find(u => 
+        u.email === sanitizedEmail || 
+        u.email.toLowerCase() === sanitizedEmail ||
+        (validator.normalizeEmail(u.email) || u.email.toLowerCase()) === sanitizedEmail
+      );
       
       if (!user) {
         console.log('❌ User not found:', sanitizedEmail);
+        console.log('🔍 Debug: Tried matching against:', Array.from(mockUsers.values()).map(u => u.email));
         return res.status(401).json({ error: 'Credenziali non valide' });
       }
 
@@ -282,8 +290,8 @@ export function setupAuth(app: Express) {
       const validatedData = registerSchema.parse(req.body);
       const { email, password, firstName, lastName } = validatedData;
 
-      // Sanitize input
-      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+      // Sanitize input - consistent with login
+      const sanitizedEmail = email.toLowerCase().trim();
       const sanitizedFirstName = validator.escape(firstName.trim());
       const sanitizedLastName = validator.escape(lastName.trim());
 
