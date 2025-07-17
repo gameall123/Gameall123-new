@@ -69,20 +69,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: ['auth', 'user'],
     queryFn: async () => {
       try {
+        console.log('🔍 Frontend: Checking auth status...');
         const response = await apiRequest('GET', '/api/auth/me');
+        
         if (!response.ok) {
-          if (response.status === 401) return null;
+          if (response.status === 401) {
+            console.log('ℹ️ Frontend: User not authenticated (401)');
+            return null;
+          }
+          console.error('❌ Frontend: Auth check failed with status:', response.status);
           throw new Error('Failed to fetch user');
         }
-        return await response.json();
+        
+        const userData = await response.json();
+        console.log('✅ Frontend: User authenticated:', userData.email);
+        return userData;
       } catch (error) {
-        console.warn('Auth check failed:', error);
+        console.warn('⚠️ Frontend: Auth check error:', error.message);
+        
+        // Debug: Check if we have cookies/tokens
+        const hasAuthCookie = document.cookie.includes('authToken');
+        console.log('🔍 Frontend Debug:', {
+          hasAuthCookie,
+          cookieCount: document.cookie.split(';').length,
+          error: error.message
+        });
+        
         return null;
       }
     },
     staleTime: 5 * 60 * 1000, // 5 minuti
     gcTime: 10 * 60 * 1000,   // 10 minuti
-    retry: false,
+    retry: (failureCount, error: any) => {
+      // Don't retry on auth errors
+      if (error?.status === 401) return false;
+      return failureCount < 2;
+    },
     refetchOnWindowFocus: true,
     refetchOnMount: true,
   });

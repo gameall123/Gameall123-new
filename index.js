@@ -789,6 +789,7 @@ var init_storage = __esm({
 import express3 from "express";
 import cors from "cors";
 import helmet2 from "helmet";
+import cookieParser from "cookie-parser";
 
 // server/routes.ts
 init_storage();
@@ -885,22 +886,34 @@ var registerRateLimit = createRateLimit(60 * 60 * 1e3, 3, "Troppi tentativi di r
 var authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : req.cookies?.authToken;
+    const cookieToken = req.cookies?.authToken;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : cookieToken;
+    console.log("\u{1F50D} Auth Debug:", {
+      hasAuthHeader: !!authHeader,
+      hasCookieToken: !!cookieToken,
+      hasToken: !!token,
+      cookieNames: Object.keys(req.cookies || {}),
+      userAgent: req.headers["user-agent"]?.substring(0, 50)
+    });
     if (!token) {
+      console.log("\u274C No token found - returning 401");
       return res.status(401).json({ error: "Non autenticato" });
     }
     const decoded = SecurityUtils.verifyToken(token);
     const user = mockUsers.get(decoded.userId);
     if (!user) {
+      console.log("\u274C User not found for token:", decoded.userId);
       return res.status(401).json({ error: "Utente non trovato" });
     }
     if (SecurityUtils.isAccountLocked(user)) {
+      console.log("\u{1F512} Account locked:", user.email);
       return res.status(423).json({ error: "Account temporaneamente bloccato" });
     }
+    console.log("\u2705 Authentication successful for:", user.email);
     req.user = user;
     next();
   } catch (error) {
-    console.error("Authentication error:", error);
+    console.error("\u{1F4A5} Authentication error:", error.message);
     res.status(401).json({ error: "Token non valido" });
   }
 };
@@ -1041,6 +1054,47 @@ function setupAuth(app2) {
       return res.status(401).json({ error: "Non autenticato" });
     }
     res.json(SecurityUtils.sanitizeUser(req.user));
+  });
+  app2.get("/api/auth/debug", (req, res) => {
+    const cookieNames = Object.keys(req.cookies || {});
+    const authHeader = req.headers.authorization;
+    const authToken = req.cookies?.authToken;
+    const debugInfo = {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      cookies: {
+        hasAuthToken: !!authToken,
+        tokenLength: authToken?.length || 0,
+        allCookies: cookieNames
+      },
+      headers: {
+        hasAuthHeader: !!authHeader,
+        userAgent: req.headers["user-agent"]?.substring(0, 100),
+        origin: req.headers.origin,
+        referer: req.headers.referer
+      },
+      mockUsers: {
+        totalUsers: mockUsers.size,
+        userIds: Array.from(mockUsers.keys()).slice(0, 3)
+        // Only first 3 for privacy
+      }
+    };
+    if (authToken) {
+      try {
+        const decoded = SecurityUtils.verifyToken(authToken);
+        debugInfo.tokenInfo = {
+          valid: true,
+          userId: decoded.userId,
+          userExists: mockUsers.has(decoded.userId)
+        };
+      } catch (error) {
+        debugInfo.tokenInfo = {
+          valid: false,
+          error: error.message
+        };
+      }
+    }
+    console.log("\u{1F50D} Auth Debug Request:", debugInfo);
+    res.json(debugInfo);
   });
   app2.post("/api/auth/logout", (req, res) => {
     res.clearCookie("authToken");
@@ -2196,6 +2250,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
+app.use(cookieParser());
 app.use(express3.json({ limit: "10mb" }));
 app.use(express3.urlencoded({ extended: false, limit: "10mb" }));
 app.use((req, res, next) => {

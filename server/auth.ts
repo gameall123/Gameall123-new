@@ -139,11 +139,22 @@ const registerRateLimit = createRateLimit(60 * 60 * 1000, 3, 'Troppi tentativi d
 const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
+    const cookieToken = req.cookies?.authToken;
     const token = authHeader?.startsWith('Bearer ') 
       ? authHeader.slice(7) 
-      : req.cookies?.authToken;
+      : cookieToken;
+
+    // Enhanced debugging for auth issues
+    console.log('🔍 Auth Debug:', {
+      hasAuthHeader: !!authHeader,
+      hasCookieToken: !!cookieToken,
+      hasToken: !!token,
+      cookieNames: Object.keys(req.cookies || {}),
+      userAgent: req.headers['user-agent']?.substring(0, 50),
+    });
 
     if (!token) {
+      console.log('❌ No token found - returning 401');
       return res.status(401).json({ error: 'Non autenticato' });
     }
 
@@ -151,17 +162,20 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
     const user = mockUsers.get(decoded.userId);
 
     if (!user) {
+      console.log('❌ User not found for token:', decoded.userId);
       return res.status(401).json({ error: 'Utente non trovato' });
     }
 
     if (SecurityUtils.isAccountLocked(user)) {
+      console.log('🔒 Account locked:', user.email);
       return res.status(423).json({ error: 'Account temporaneamente bloccato' });
     }
 
+    console.log('✅ Authentication successful for:', user.email);
     req.user = user;
     next();
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('💥 Authentication error:', error.message);
     res.status(401).json({ error: 'Token non valido' });
   }
 };
@@ -362,6 +376,52 @@ export function setupAuth(app: Express) {
     }
 
     res.json(SecurityUtils.sanitizeUser(req.user));
+  });
+
+  // 🔍 Debug endpoint for auth troubleshooting
+  app.get('/api/auth/debug', (req: Request, res: Response) => {
+    const cookieNames = Object.keys(req.cookies || {});
+    const authHeader = req.headers.authorization;
+    const authToken = req.cookies?.authToken;
+    
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      cookies: {
+        hasAuthToken: !!authToken,
+        tokenLength: authToken?.length || 0,
+        allCookies: cookieNames,
+      },
+      headers: {
+        hasAuthHeader: !!authHeader,
+        userAgent: req.headers['user-agent']?.substring(0, 100),
+        origin: req.headers.origin,
+        referer: req.headers.referer,
+      },
+      mockUsers: {
+        totalUsers: mockUsers.size,
+        userIds: Array.from(mockUsers.keys()).slice(0, 3), // Only first 3 for privacy
+      }
+    };
+
+    // Try to decode token if present
+    if (authToken) {
+      try {
+        const decoded = SecurityUtils.verifyToken(authToken);
+        debugInfo.tokenInfo = {
+          valid: true,
+          userId: decoded.userId,
+          userExists: mockUsers.has(decoded.userId),
+        };
+      } catch (error) {
+        debugInfo.tokenInfo = {
+          valid: false,
+          error: error.message,
+        };
+      }
+    }
+
+    console.log('🔍 Auth Debug Request:', debugInfo);
+    res.json(debugInfo);
   });
 
   // 🚪 Logout Endpoint
