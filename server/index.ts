@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
+import { setupAuth } from "./auth";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -103,6 +104,9 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
+    // 🔐 Setup ultra-modern auth system
+    setupAuth(app);
+    
     const server = await registerRoutes(app);
 
     // ✅ Static serving / Vite setup (BEFORE error handlers)

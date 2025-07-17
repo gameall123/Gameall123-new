@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/hooks/useAuth';
 import { useCartStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +28,7 @@ import {
 
 export function Navbar() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated, isLoading, logoutMutation } = useAuth();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const { isOpen, toggleCart, getItemCount } = useCartStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -201,7 +201,7 @@ export function Navbar() {
                     </>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => logoutMutation.mutate()}>
+                  <DropdownMenuItem onClick={() => logout()}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Logout
                   </DropdownMenuItem>
@@ -296,7 +296,7 @@ export function Navbar() {
                         variant="ghost"
                         className="w-full justify-start text-red-600"
                         onClick={() => {
-                          logoutMutation.mutate();
+                          logout();
                           setMobileMenuOpen(false);
                         }}
                       >

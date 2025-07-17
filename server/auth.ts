@@ -1,488 +1,439 @@
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
-import { Express } from "express";
-import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
-import RedisStore from "connect-redis";
-import { createClient } from "redis";
+import { Express, Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import validator from 'validator';
+import { z } from 'zod';
 
-declare global {
-  namespace Express {
-    interface User extends SelectUser {}
-  }
-}
-
-const scryptAsync = promisify(scrypt);
-
-// ✅ Mock user storage in memory for development with limits
-const mockUsers = new Map<string, {
+// 🎯 Types Ultra Moderni
+interface User {
   id: string;
   email: string;
-  password: string | null;
+  password: string;
   firstName: string;
   lastName: string;
-  profileImageUrl: string | null;
-  phone: string | null;
-  bio: string | null;
-  shippingAddress: any;
-  paymentMethod: any;
-  provider: string;
-  providerId: string | null;
+  avatar?: string;
   isAdmin: boolean;
   emailVerified: boolean;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-}>();
+  lastLoginAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  loginAttempts: number;
+  lockUntil?: Date;
+}
 
-// Limit mock users to prevent memory issues
-const MAX_MOCK_USERS = 100;
+interface AuthenticatedRequest extends Request {
+  user?: User;
+}
 
-// Cleanup old users periodically
-setInterval(() => {
-  if (mockUsers.size > MAX_MOCK_USERS) {
-    const usersArray = Array.from(mockUsers.entries());
-    const sortedUsers = usersArray.sort((a, b) => {
-      const dateA = a[1].createdAt?.getTime() || 0;
-      const dateB = b[1].createdAt?.getTime() || 0;
-      return dateA - dateB;
-    });
-    
-    const usersToRemove = sortedUsers.slice(0, mockUsers.size - MAX_MOCK_USERS);
-    usersToRemove.forEach(([id]) => {
-      mockUsers.delete(id);
-    });
-    
-    console.log(`🧹 Cleaned up ${usersToRemove.length} old mock users`);
+// 🛡️ Validation Schemas
+const loginSchema = z.object({
+  email: z.string().email().max(100),
+  password: z.string().min(6).max(100),
+  rememberMe: z.boolean().optional(),
+});
+
+const registerSchema = z.object({
+  email: z.string().email().max(100),
+  password: z.string().min(8).max(100)
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password deve contenere minuscole, maiuscole e numeri'),
+  firstName: z.string().min(2).max(50)
+    .regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Solo lettere consentite'),
+  lastName: z.string().min(2).max(50)
+    .regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Solo lettere consentite'),
+});
+
+// 🗄️ Mock Database Ultra Avanzato
+const mockUsers = new Map<string, User>();
+const MAX_USERS = 100;
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCK_TIME = 30 * 60 * 1000; // 30 minuti
+
+// 🔑 JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET || 'ultra-secure-development-secret-2024';
+const JWT_EXPIRES_IN = '7d';
+const JWT_REFRESH_EXPIRES_IN = '30d';
+
+// 🛡️ Security Utilities
+class SecurityUtils {
+  static async hashPassword(password: string): Promise<string> {
+    const saltRounds = 12;
+    return bcrypt.hash(password, saltRounds);
   }
-}, 5 * 60 * 1000); // Every 5 minutes
 
-async function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-async function comparePasswords(supplied: string, stored: string) {
-  try {
-    const [hashed, salt] = stored.split(".");
-    if (!hashed || !salt) {
-      return false;
-    }
-    const hashedBuf = Buffer.from(hashed, "hex");
-    const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-    return timingSafeEqual(hashedBuf, suppliedBuf);
-  } catch (error) {
-    console.error("Password comparison error:", error);
-    return false;
+  static async comparePassword(password: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(password, hash);
   }
-}
 
-// ✅ Input validation helpers
-function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email) && email.length <= 255;
-}
+  static generateToken(payload: any, expiresIn: string = JWT_EXPIRES_IN): string {
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  }
 
-function validatePassword(password: string): boolean {
-  return password.length >= 6 && password.length <= 128;
-}
-
-function validateName(name: string): boolean {
-  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ0-9\s'-]+$/.test(name);
-}
-
-// ✅ Mock getUserByEmail function
-async function getMockUserByEmail(email: string) {
-  for (const user of mockUsers.values()) {
-    if (user.email.toLowerCase() === email.toLowerCase()) {
-      return user;
+  static verifyToken(token: string): any {
+    try {
+      return jwt.verify(token, JWT_SECRET);
+    } catch (error) {
+      throw new Error('Token non valido');
     }
   }
-  return null;
-}
 
-// ✅ Mock getUser function
-async function getMockUser(id: string) {
-  return mockUsers.get(id) || null;
-}
-
-export function setupAuth(app: Express) {
-  const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-change-in-production';
-
-  // Configuro il client Redis con fallback in memoria
-  let sessionStore;
-  try {
-    const redisClient = createClient({
-      url: process.env.REDIS_URL || 'redis://localhost:6379',
-      legacyMode: true,
-    });
-    redisClient.connect().catch(console.error);
-    sessionStore = new RedisStore({ client: redisClient });
-    console.log('✅ Redis session store configured');
-  } catch (error) {
-    console.warn('⚠️ Redis not available, using memory store:', error);
-    sessionStore = undefined; // Will use default memory store
+  static sanitizeUser(user: User): Omit<User, 'password'> {
+    const { password, ...sanitizedUser } = user;
+    return sanitizedUser;
   }
 
-  // Configuro le sessioni con fallback
-  const sessionSettings: session.SessionOptions = {
-    store: sessionStore,
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    name: 'gameall.session',
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 24 * 60 * 60 * 1000, // Reduced to 1 day
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  static generateUserId(): string {
+    return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  static isAccountLocked(user: User): boolean {
+    return !!(user.lockUntil && user.lockUntil > new Date());
+  }
+
+  static async incrementLoginAttempts(userId: string): Promise<void> {
+    const user = mockUsers.get(userId);
+    if (!user) return;
+
+    const attempts = user.loginAttempts + 1;
+    const updates: Partial<User> = { loginAttempts: attempts };
+
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      updates.lockUntil = new Date(Date.now() + LOCK_TIME);
+    }
+
+    Object.assign(user, updates);
+    mockUsers.set(userId, user);
+  }
+
+  static async resetLoginAttempts(userId: string): Promise<void> {
+    const user = mockUsers.get(userId);
+    if (!user) return;
+
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    user.lastLoginAt = new Date();
+    mockUsers.set(userId, user);
+  }
+}
+
+// 🚫 Rate Limiting Ultra Sicuro
+const createRateLimit = (windowMs: number, max: number, message: string) => {
+  return rateLimit({
+    windowMs,
+    max,
+    message: { error: message },
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      console.warn(`Rate limit exceeded for IP: ${req.ip}`);
+      res.status(429).json({ error: message });
     },
-    rolling: true,
-    unset: 'destroy', // Destroy session when unset
-  };
+  });
+};
 
-  app.set("trust proxy", 1);
-  app.use(session(sessionSettings));
-  app.use(passport.initialize());
-  app.use(passport.session());
+const authRateLimit = createRateLimit(15 * 60 * 1000, 5, 'Troppi tentativi di login. Riprova tra 15 minuti.');
+const registerRateLimit = createRateLimit(60 * 60 * 1000, 3, 'Troppi tentativi di registrazione. Riprova tra un\'ora.');
 
-  passport.use(
-    new LocalStrategy(
-      { usernameField: 'email' },
-      async (email, password, done) => {
-        try {
-          console.log('🔐 Login attempt for email:', email);
-          
-          // ✅ Input validation
-          if (!validateEmail(email)) {
-            console.log('❌ Invalid email format:', email);
-            return done(null, false, { message: 'Formato email non valido' });
-          }
-          
-          if (!validatePassword(password)) {
-            console.log('❌ Invalid password format');
-            return done(null, false, { message: 'Password non valida' });
-          }
-          
-          // ✅ Use mock user storage
-          const user = await getMockUserByEmail(email);
-          if (!user) {
-            console.log('❌ User not found:', email);
-            return done(null, false, { message: 'Email o password non validi' });
-          }
-          
-          if (!user.password) {
-            console.log('❌ User has no password (social auth):', email);
-            return done(null, false, { message: 'Email o password non validi' });
-          }
-          const passwordMatch = await comparePasswords(password, user.password);
-          if (!passwordMatch) {
-            console.log('❌ Wrong password for:', email);
-            return done(null, false, { message: 'Email o password non validi' });
-          }
-          
-          console.log('✅ Login successful for:', email);
-          return done(null, user);
-        } catch (error) {
-          console.error('💥 Login error:', error);
-          return done(error);
-        }
-      }
-    )
-  );
+// 🛡️ Authentication Middleware
+const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') 
+      ? authHeader.slice(7) 
+      : req.cookies?.authToken;
 
-  passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id: string, done) => {
-    try {
-      // ✅ Use mock user storage
-      const user = await getMockUser(id);
-      done(null, user);
-    } catch (error) {
-      done(error);
+    if (!token) {
+      return res.status(401).json({ error: 'Non autenticato' });
     }
-  });
 
-  // Test endpoint to verify server is working
-  app.get("/api/test", (req, res) => {
-    res.json({ 
-      message: "Auth server is working", 
-      timestamp: new Date().toISOString(),
-      endpoints: ["/api/test", "/api/register", "/api/login", "/api/user"],
-      registeredUsers: mockUsers.size,
-      environment: process.env.NODE_ENV
-    });
-  });
+    const decoded = SecurityUtils.verifyToken(token);
+    const user = mockUsers.get(decoded.userId);
 
-  // ✅ Updated registration endpoint - saves to mock storage and auto-login
-  app.post("/api/register", async (req, res) => {
-    try {
-      console.log('📝 Registration attempt');
-      
-      const { email, password, firstName, lastName } = req.body || {};
-      
-      // ✅ Enhanced input validation
-      if (!email || !password || !firstName || !lastName) {
-        return res.status(400).json({ message: "Tutti i campi sono obbligatori" });
-      }
-
-      if (!validateEmail(email)) {
-        return res.status(400).json({ message: "Formato email non valido" });
-      }
-
-      if (!validatePassword(password)) {
-        return res.status(400).json({ message: "La password deve essere tra 6 e 128 caratteri" });
-      }
-
-      if (!validateName(firstName)) {
-        return res.status(400).json({ message: "Nome non valido (2-50 caratteri, solo lettere)" });
-      }
-
-      if (!validateName(lastName)) {
-        return res.status(400).json({ message: "Cognome non valido (2-50 caratteri, solo lettere)" });
-      }
-
-      // Check if user already exists
-      if (await getMockUserByEmail(email)) {
-        return res.status(400).json({ message: "Un utente con questa email esiste già" });
-      }
-
-      // Check if we've reached the limit
-      if (mockUsers.size >= MAX_MOCK_USERS) {
-        console.warn('⚠️ Mock users limit reached, cleaning up old users');
-        // Force cleanup
-        const usersArray = Array.from(mockUsers.entries());
-        const sortedUsers = usersArray.sort((a, b) => {
-          const dateA = a[1].createdAt?.getTime() || 0;
-          const dateB = b[1].createdAt?.getTime() || 0;
-          return dateA - dateB;
-        });
-        
-        const usersToRemove = sortedUsers.slice(0, Math.floor(MAX_MOCK_USERS * 0.2)); // Remove 20%
-        usersToRemove.forEach(([id]) => {
-          mockUsers.delete(id);
-        });
-        console.log(`🧹 Emergency cleanup: removed ${usersToRemove.length} users`);
-      }
-
-      // ✅ Create user with hashed password and save to mock storage
-      const hashedPassword = await hashPassword(password);
-      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const newUser = {
-        id: userId,
-        email: email.toLowerCase(), // ✅ Normalize email
-        password: hashedPassword,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        profileImageUrl: null,
-        phone: null,
-        bio: null,
-        shippingAddress: {},
-        paymentMethod: {},
-        provider: 'email',
-        providerId: null,
-        isAdmin: false,
-        emailVerified: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      // ✅ Save to mock storage
-      mockUsers.set(userId, newUser);
-      
-      console.log('✅ User registered and saved:', userId);
-      
-      // ✅ Auto-login after registration
-      req.login(newUser, (err) => {
-        if (err) {
-          console.error('💥 Auto-login error after registration:', err);
-          // Still return success for registration, but without auto-login
-          const { password: _, ...userResponse } = newUser;
-          return res.status(201).json({
-            message: "Registrazione completata con successo. Effettua il login.",
-            user: userResponse,
-            autoLogin: false
-          });
-        }
-        
-        console.log('✅ Registration and auto-login successful');
-        
-        // Return user without password
-        const { password: _, ...userResponse } = newUser;
-        return res.status(201).json({
-          message: "Registrazione completata con successo",
-          user: userResponse,
-          autoLogin: true
-        });
-      });
-      
-    } catch (error) {
-      console.error('💥 Registration error:', error);
-      console.error('💥 Error details:', {
-        message: error.message,
-        stack: error.stack,
-        body: req.body
-      });
-      return res.status(500).json({ 
-        message: "Errore durante la registrazione",
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+    if (!user) {
+      return res.status(401).json({ error: 'Utente non trovato' });
     }
-  });
 
-  // ✅ Updated login endpoint with better error handling
-  app.post("/api/login", (req, res, next) => {
-    console.log('🔐 Login endpoint called with:', { email: req.body?.email });
-    
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) {
-        console.error('💥 Passport authentication error:', err);
-        return res.status(500).json({ message: "Errore del server durante l'autenticazione" });
-      }
+    if (SecurityUtils.isAccountLocked(user)) {
+      return res.status(423).json({ error: 'Account temporaneamente bloccato' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(401).json({ error: 'Token non valido' });
+  }
+};
+
+// 🚀 Setup Auth Routes Ultra Moderno
+export function setupAuth(app: Express) {
+  // 🛡️ Security Headers
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+      },
+    },
+  }));
+
+  // 🔐 Login Endpoint Ultra Sicuro
+  app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) => {
+    try {
+      console.log('🔐 Login attempt for:', req.body?.email);
+
+      // Validation
+      const validatedData = loginSchema.parse(req.body);
+      const { email, password, rememberMe } = validatedData;
+
+      // Sanitize input
+      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+
+      // Find user
+      const user = Array.from(mockUsers.values()).find(u => u.email === sanitizedEmail);
       
       if (!user) {
-        console.log('❌ Login failed:', info?.message);
-        return res.status(401).json({ 
-          message: info?.message || "Credenziali non valide",
-          success: false 
-        });
+        console.log('❌ User not found:', sanitizedEmail);
+        return res.status(401).json({ error: 'Credenziali non valide' });
       }
-      
-      console.log('🔐 User found, attempting session login for:', user.email);
-      
-      req.login(user, (err) => {
-        if (err) {
-          console.error('💥 Session login error:', err);
-          return res.status(500).json({ message: "Errore nella creazione della sessione" });
-        }
-        
-        console.log('✅ Login successful, user authenticated:', user.email);
-        console.log('🔍 Session info:', { 
-          sessionId: req.sessionID,
-          isAuthenticated: req.isAuthenticated(),
-          userId: req.user?.id 
-        });
-        
-        // Return user without password
-        const { password: _, ...userResponse } = user;
-        res.json({
-          ...userResponse,
-          success: true
-        });
-      });
-    })(req, res, next);
-  });
 
-  // Logout endpoint
-  app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
-      if (err) {
-        console.error('💥 Logout error:', err);
-        return res.status(500).json({ message: "Errore durante il logout" });
+      // Check if account is locked
+      if (SecurityUtils.isAccountLocked(user)) {
+        console.log('🔒 Account locked:', sanitizedEmail);
+        return res.status(423).json({ error: 'Account temporaneamente bloccato. Riprova più tardi.' });
       }
-      // ✅ Destroy session completely
-      req.session.destroy((err) => {
-        if (err) {
-          console.error('💥 Session destroy error:', err);
-        }
-        res.clearCookie('gameall.session');
-        res.json({ message: "Logout effettuato con successo" });
-      });
-    });
-  });
 
-  // Current user endpoint
-  app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Non autenticato" });
-    }
-    
-    // Return user without password
-    const { password: _, ...userResponse } = req.user;
-    res.json(userResponse);
-  });
+      // Verify password
+      const isValidPassword = await SecurityUtils.comparePassword(password, user.password);
+      
+      if (!isValidPassword) {
+        console.log('❌ Invalid password for:', sanitizedEmail);
+        await SecurityUtils.incrementLoginAttempts(user.id);
+        return res.status(401).json({ error: 'Credenziali non valide' });
+      }
 
-  // ✅ Debug endpoint to check registered users
-  app.get("/api/debug/users", (req, res) => {
-    const users = Array.from(mockUsers.values()).map(user => {
-      const { password: _, ...userWithoutPassword } = user;
-      return userWithoutPassword;
-    });
-    
-    res.json({
-      totalUsers: users.length,
-      users: users,
-      environment: process.env.NODE_ENV
-    });
-  });
+      // Reset login attempts on successful login
+      await SecurityUtils.resetLoginAttempts(user.id);
 
-  // ✅ Test registration endpoint
-  app.post("/api/test-register", async (req, res) => {
-    try {
-      const testUser = {
-        email: 'test@example.com',
-        password: 'test123',
-        firstName: 'Test',
-        lastName: 'User'
+      // Generate tokens
+      const accessToken = SecurityUtils.generateToken({ userId: user.id }, rememberMe ? '30d' : '7d');
+      const refreshToken = SecurityUtils.generateToken({ userId: user.id, type: 'refresh' }, JWT_REFRESH_EXPIRES_IN);
+
+      // Set secure cookies
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict' as const,
+        maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000, // 30 days or 7 days
       };
+
+      res.cookie('authToken', accessToken, cookieOptions);
+      res.cookie('refreshToken', refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+
+      console.log('✅ Login successful for:', sanitizedEmail);
+
+      res.json({
+        success: true,
+        message: 'Login effettuato con successo',
+        user: SecurityUtils.sanitizeUser(user),
+        tokens: {
+          accessToken,
+          refreshToken,
+        },
+      });
+
+    } catch (error) {
+      console.error('💥 Login error:', error);
       
-      const hashedPassword = await hashPassword(testUser.password);
-      const userId = `test_${Date.now()}`;
-      
-      const newUser = {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: 'Dati non validi',
+          details: error.errors.map(e => e.message).join(', ')
+        });
+      }
+
+      res.status(500).json({ error: 'Errore interno del server' });
+    }
+  });
+
+  // 📝 Register Endpoint Ultra Sicuro
+  app.post('/api/auth/register', registerRateLimit, async (req: Request, res: Response) => {
+    try {
+      console.log('📝 Registration attempt for:', req.body?.email);
+
+      // Validation
+      const validatedData = registerSchema.parse(req.body);
+      const { email, password, firstName, lastName } = validatedData;
+
+      // Sanitize input
+      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+      const sanitizedFirstName = validator.escape(firstName.trim());
+      const sanitizedLastName = validator.escape(lastName.trim());
+
+      // Check if user already exists
+      const existingUser = Array.from(mockUsers.values()).find(u => u.email === sanitizedEmail);
+      if (existingUser) {
+        console.log('❌ User already exists:', sanitizedEmail);
+        return res.status(409).json({ error: 'Un utente con questa email esiste già' });
+      }
+
+      // Check user limit
+      if (mockUsers.size >= MAX_USERS) {
+        console.warn('⚠️ User limit reached, cleaning up...');
+        // Cleanup old users (keep only 50% newest)
+        const users = Array.from(mockUsers.entries())
+          .sort(([,a], [,b]) => a.createdAt.getTime() - b.createdAt.getTime())
+          .slice(0, Math.floor(MAX_USERS * 0.5));
+        
+        mockUsers.clear();
+        users.forEach(([id, user]) => mockUsers.set(id, user));
+      }
+
+      // Hash password
+      const hashedPassword = await SecurityUtils.hashPassword(password);
+
+      // Create new user
+      const userId = SecurityUtils.generateUserId();
+      const newUser: User = {
         id: userId,
-        email: testUser.email,
+        email: sanitizedEmail,
         password: hashedPassword,
-        firstName: testUser.firstName,
-        lastName: testUser.lastName,
-        profileImageUrl: null,
-        phone: null,
-        bio: null,
-        shippingAddress: {},
-        paymentMethod: {},
-        provider: 'email',
-        providerId: null,
+        firstName: sanitizedFirstName,
+        lastName: sanitizedLastName,
         isAdmin: false,
         emailVerified: false,
+        lastLoginAt: new Date(),
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        loginAttempts: 0,
       };
 
+      // Save user
       mockUsers.set(userId, newUser);
-      
-      const { password: _, ...userResponse } = newUser;
+
+      // Generate tokens (auto-login)
+      const accessToken = SecurityUtils.generateToken({ userId });
+      const refreshToken = SecurityUtils.generateToken({ userId, type: 'refresh' }, JWT_REFRESH_EXPIRES_IN);
+
+      // Set secure cookies
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict' as const,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      };
+
+      res.cookie('authToken', accessToken, cookieOptions);
+      res.cookie('refreshToken', refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+
+      console.log('✅ Registration successful for:', sanitizedEmail);
+
       res.status(201).json({
-        message: "Test user created successfully",
-        user: userResponse
+        success: true,
+        message: 'Registrazione completata con successo',
+        user: SecurityUtils.sanitizeUser(newUser),
+        tokens: {
+          accessToken,
+          refreshToken,
+        },
       });
+
     } catch (error) {
-      console.error('💥 Test registration error:', error);
-      res.status(500).json({ 
-        message: "Test registration failed",
-        error: error.message
-      });
+      console.error('💥 Registration error:', error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: 'Dati non validi',
+          details: error.errors.map(e => e.message).join(', ')
+        });
+      }
+
+      res.status(500).json({ error: 'Errore interno del server' });
     }
   });
 
-  // ✅ Cleanup mock users endpoint
-  app.post("/api/cleanup-users", (req, res) => {
+  // 👤 Get Current User
+  app.get('/api/auth/me', authenticate, (req: AuthenticatedRequest, res: Response) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Non autenticato' });
+    }
+
+    res.json(SecurityUtils.sanitizeUser(req.user));
+  });
+
+  // 🚪 Logout Endpoint
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    res.clearCookie('authToken');
+    res.clearCookie('refreshToken');
+    
+    console.log('✅ Logout successful');
+    res.json({ success: true, message: 'Logout effettuato con successo' });
+  });
+
+  // 🔄 Refresh Token
+  app.post('/api/auth/refresh', async (req: Request, res: Response) => {
     try {
-      const beforeCount = mockUsers.size;
-      mockUsers.clear();
-      console.log(`🧹 Manual cleanup: removed ${beforeCount} users`);
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+      
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Refresh token mancante' });
+      }
+
+      const decoded = SecurityUtils.verifyToken(refreshToken);
+      
+      if (decoded.type !== 'refresh') {
+        return res.status(401).json({ error: 'Token type non valido' });
+      }
+
+      const user = mockUsers.get(decoded.userId);
+      if (!user) {
+        return res.status(401).json({ error: 'Utente non trovato' });
+      }
+
+      // Generate new access token
+      const newAccessToken = SecurityUtils.generateToken({ userId: user.id });
+      
+      res.cookie('authToken', newAccessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
       res.json({
-        message: "Mock users cleaned up successfully",
-        removedCount: beforeCount
+        success: true,
+        accessToken: newAccessToken,
+        user: SecurityUtils.sanitizeUser(user),
       });
+
     } catch (error) {
-      console.error('💥 Cleanup error:', error);
-      res.status(500).json({ 
-        message: "Cleanup failed",
-        error: error.message
-      });
+      console.error('💥 Refresh token error:', error);
+      res.status(401).json({ error: 'Refresh token non valido' });
     }
   });
+
+  // 📊 Admin Endpoints
+  app.get('/api/auth/stats', authenticate, (req: AuthenticatedRequest, res: Response) => {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ error: 'Accesso negato' });
+    }
+
+    const stats = {
+      totalUsers: mockUsers.size,
+      maxUsers: MAX_USERS,
+      lockedAccounts: Array.from(mockUsers.values()).filter(SecurityUtils.isAccountLocked).length,
+      recentRegistrations: Array.from(mockUsers.values())
+        .filter(u => u.createdAt > new Date(Date.now() - 24 * 60 * 60 * 1000)).length,
+    };
+
+    res.json(stats);
+  });
+
+  console.log('🔐 Auth system initialized with ultra-modern security');
 }
+
+// Export middleware per altri moduli
+export { authenticate, SecurityUtils };
