@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/hooks/useAuth';
 import { useCartStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { CartToast } from './CartToast';

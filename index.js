@@ -788,394 +788,319 @@ var init_storage = __esm({
 // server/index.ts
 import express3 from "express";
 import cors from "cors";
-import helmet from "helmet";
+import helmet2 from "helmet";
 
 // server/routes.ts
 init_storage();
 import { createServer } from "http";
 
 // server/auth.ts
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
-import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import RedisStore from "connect-redis";
-import { createClient } from "redis";
-var scryptAsync = promisify(scrypt);
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import validator from "validator";
+import { z } from "zod";
+var loginSchema = z.object({
+  email: z.string().email().max(100),
+  password: z.string().min(6).max(100),
+  rememberMe: z.boolean().optional()
+});
+var registerSchema = z.object({
+  email: z.string().email().max(100),
+  password: z.string().min(8).max(100).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, "Password deve contenere minuscole, maiuscole e numeri"),
+  firstName: z.string().min(2).max(50).regex(/^[a-zA-ZÀ-ÿ\s]+$/, "Solo lettere consentite"),
+  lastName: z.string().min(2).max(50).regex(/^[a-zA-ZÀ-ÿ\s]+$/, "Solo lettere consentite")
+});
 var mockUsers = /* @__PURE__ */ new Map();
-var MAX_MOCK_USERS = 100;
-setInterval(() => {
-  if (mockUsers.size > MAX_MOCK_USERS) {
-    const usersArray = Array.from(mockUsers.entries());
-    const sortedUsers = usersArray.sort((a, b) => {
-      const dateA = a[1].createdAt?.getTime() || 0;
-      const dateB = b[1].createdAt?.getTime() || 0;
-      return dateA - dateB;
-    });
-    const usersToRemove = sortedUsers.slice(0, mockUsers.size - MAX_MOCK_USERS);
-    usersToRemove.forEach(([id]) => {
-      mockUsers.delete(id);
-    });
-    console.log(`\u{1F9F9} Cleaned up ${usersToRemove.length} old mock users`);
+var MAX_USERS = 100;
+var MAX_LOGIN_ATTEMPTS = 5;
+var LOCK_TIME = 30 * 60 * 1e3;
+var JWT_SECRET = process.env.JWT_SECRET || "ultra-secure-development-secret-2024";
+var JWT_EXPIRES_IN = "7d";
+var JWT_REFRESH_EXPIRES_IN = "30d";
+var SecurityUtils = class {
+  static async hashPassword(password) {
+    const saltRounds = 12;
+    return bcrypt.hash(password, saltRounds);
   }
-}, 5 * 60 * 1e3);
-async function hashPassword(password) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = await scryptAsync(password, salt, 64);
-  return `${buf.toString("hex")}.${salt}`;
-}
-async function comparePasswords(supplied, stored) {
-  try {
-    const [hashed, salt] = stored.split(".");
-    if (!hashed || !salt) {
-      return false;
-    }
-    const hashedBuf = Buffer.from(hashed, "hex");
-    const suppliedBuf = await scryptAsync(supplied, salt, 64);
-    return timingSafeEqual(hashedBuf, suppliedBuf);
-  } catch (error) {
-    console.error("Password comparison error:", error);
-    return false;
+  static async comparePassword(password, hash) {
+    return bcrypt.compare(password, hash);
   }
-}
-function validateEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email) && email.length <= 255;
-}
-function validatePassword(password) {
-  return password.length >= 6 && password.length <= 128;
-}
-function validateName(name) {
-  return name.length >= 2 && name.length <= 50 && /^[a-zA-ZÀ-ÿ0-9\s'-]+$/.test(name);
-}
-async function getMockUserByEmail(email) {
-  for (const user of mockUsers.values()) {
-    if (user.email.toLowerCase() === email.toLowerCase()) {
-      return user;
-    }
+  static generateToken(payload, expiresIn = JWT_EXPIRES_IN) {
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
   }
-  return null;
-}
-async function getMockUser(id) {
-  return mockUsers.get(id) || null;
-}
-function setupAuth(app2) {
-  const sessionSecret = process.env.SESSION_SECRET || "development-session-secret-change-in-production";
-  let sessionStore;
-  try {
-    const redisClient = createClient({
-      url: process.env.REDIS_URL || "redis://localhost:6379",
-      legacyMode: true
-    });
-    redisClient.connect().catch(console.error);
-    sessionStore = new RedisStore({ client: redisClient });
-    console.log("\u2705 Redis session store configured");
-  } catch (error) {
-    console.warn("\u26A0\uFE0F Redis not available, using memory store:", error);
-    sessionStore = void 0;
-  }
-  const sessionSettings = {
-    store: sessionStore,
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    name: "gameall.session",
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 24 * 60 * 60 * 1e3,
-      // Reduced to 1 day
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax"
-    },
-    rolling: true,
-    unset: "destroy"
-    // Destroy session when unset
-  };
-  app2.set("trust proxy", 1);
-  app2.use(session(sessionSettings));
-  app2.use(passport.initialize());
-  app2.use(passport.session());
-  passport.use(
-    new LocalStrategy(
-      { usernameField: "email" },
-      async (email, password, done) => {
-        try {
-          console.log("\u{1F510} Login attempt for email:", email);
-          if (!validateEmail(email)) {
-            console.log("\u274C Invalid email format:", email);
-            return done(null, false, { message: "Formato email non valido" });
-          }
-          if (!validatePassword(password)) {
-            console.log("\u274C Invalid password format");
-            return done(null, false, { message: "Password non valida" });
-          }
-          const user = await getMockUserByEmail(email);
-          if (!user) {
-            console.log("\u274C User not found:", email);
-            return done(null, false, { message: "Email o password non validi" });
-          }
-          if (!user.password) {
-            console.log("\u274C User has no password (social auth):", email);
-            return done(null, false, { message: "Email o password non validi" });
-          }
-          const passwordMatch = await comparePasswords(password, user.password);
-          if (!passwordMatch) {
-            console.log("\u274C Wrong password for:", email);
-            return done(null, false, { message: "Email o password non validi" });
-          }
-          console.log("\u2705 Login successful for:", email);
-          return done(null, user);
-        } catch (error) {
-          console.error("\u{1F4A5} Login error:", error);
-          return done(error);
-        }
-      }
-    )
-  );
-  passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id, done) => {
+  static verifyToken(token) {
     try {
-      const user = await getMockUser(id);
-      done(null, user);
+      return jwt.verify(token, JWT_SECRET);
     } catch (error) {
-      done(error);
+      throw new Error("Token non valido");
+    }
+  }
+  static sanitizeUser(user) {
+    const { password, ...sanitizedUser } = user;
+    return sanitizedUser;
+  }
+  static generateUserId() {
+    return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  static isAccountLocked(user) {
+    return !!(user.lockUntil && user.lockUntil > /* @__PURE__ */ new Date());
+  }
+  static async incrementLoginAttempts(userId) {
+    const user = mockUsers.get(userId);
+    if (!user) return;
+    const attempts = user.loginAttempts + 1;
+    const updates = { loginAttempts: attempts };
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      updates.lockUntil = new Date(Date.now() + LOCK_TIME);
+    }
+    Object.assign(user, updates);
+    mockUsers.set(userId, user);
+  }
+  static async resetLoginAttempts(userId) {
+    const user = mockUsers.get(userId);
+    if (!user) return;
+    user.loginAttempts = 0;
+    user.lockUntil = void 0;
+    user.lastLoginAt = /* @__PURE__ */ new Date();
+    mockUsers.set(userId, user);
+  }
+};
+var createRateLimit = (windowMs, max, message) => {
+  return rateLimit({
+    windowMs,
+    max,
+    message: { error: message },
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+      console.warn(`Rate limit exceeded for IP: ${req.ip}`);
+      res.status(429).json({ error: message });
     }
   });
-  app2.get("/api/test", (req, res) => {
-    res.json({
-      message: "Auth server is working",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      endpoints: ["/api/test", "/api/register", "/api/login", "/api/user"],
-      registeredUsers: mockUsers.size,
-      environment: process.env.NODE_ENV
-    });
-  });
-  app2.post("/api/register", async (req, res) => {
+};
+var authRateLimit = createRateLimit(15 * 60 * 1e3, 5, "Troppi tentativi di login. Riprova tra 15 minuti.");
+var registerRateLimit = createRateLimit(60 * 60 * 1e3, 3, "Troppi tentativi di registrazione. Riprova tra un'ora.");
+var authenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : req.cookies?.authToken;
+    if (!token) {
+      return res.status(401).json({ error: "Non autenticato" });
+    }
+    const decoded = SecurityUtils.verifyToken(token);
+    const user = mockUsers.get(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: "Utente non trovato" });
+    }
+    if (SecurityUtils.isAccountLocked(user)) {
+      return res.status(423).json({ error: "Account temporaneamente bloccato" });
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("Authentication error:", error);
+    res.status(401).json({ error: "Token non valido" });
+  }
+};
+function setupAuth(app2) {
+  app2.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"]
+      }
+    }
+  }));
+  app2.post("/api/auth/login", authRateLimit, async (req, res) => {
     try {
-      console.log("\u{1F4DD} Registration attempt");
-      const { email, password, firstName, lastName } = req.body || {};
-      if (!email || !password || !firstName || !lastName) {
-        return res.status(400).json({ message: "Tutti i campi sono obbligatori" });
+      console.log("\u{1F510} Login attempt for:", req.body?.email);
+      const validatedData = loginSchema.parse(req.body);
+      const { email, password, rememberMe } = validatedData;
+      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+      const user = Array.from(mockUsers.values()).find((u) => u.email === sanitizedEmail);
+      if (!user) {
+        console.log("\u274C User not found:", sanitizedEmail);
+        return res.status(401).json({ error: "Credenziali non valide" });
       }
-      if (!validateEmail(email)) {
-        return res.status(400).json({ message: "Formato email non valido" });
+      if (SecurityUtils.isAccountLocked(user)) {
+        console.log("\u{1F512} Account locked:", sanitizedEmail);
+        return res.status(423).json({ error: "Account temporaneamente bloccato. Riprova pi\xF9 tardi." });
       }
-      if (!validatePassword(password)) {
-        return res.status(400).json({ message: "La password deve essere tra 6 e 128 caratteri" });
+      const isValidPassword = await SecurityUtils.comparePassword(password, user.password);
+      if (!isValidPassword) {
+        console.log("\u274C Invalid password for:", sanitizedEmail);
+        await SecurityUtils.incrementLoginAttempts(user.id);
+        return res.status(401).json({ error: "Credenziali non valide" });
       }
-      if (!validateName(firstName)) {
-        return res.status(400).json({ message: "Nome non valido (2-50 caratteri, solo lettere)" });
-      }
-      if (!validateName(lastName)) {
-        return res.status(400).json({ message: "Cognome non valido (2-50 caratteri, solo lettere)" });
-      }
-      if (await getMockUserByEmail(email)) {
-        return res.status(400).json({ message: "Un utente con questa email esiste gi\xE0" });
-      }
-      if (mockUsers.size >= MAX_MOCK_USERS) {
-        console.warn("\u26A0\uFE0F Mock users limit reached, cleaning up old users");
-        const usersArray = Array.from(mockUsers.entries());
-        const sortedUsers = usersArray.sort((a, b) => {
-          const dateA = a[1].createdAt?.getTime() || 0;
-          const dateB = b[1].createdAt?.getTime() || 0;
-          return dateA - dateB;
+      await SecurityUtils.resetLoginAttempts(user.id);
+      const accessToken = SecurityUtils.generateToken({ userId: user.id }, rememberMe ? "30d" : "7d");
+      const refreshToken = SecurityUtils.generateToken({ userId: user.id, type: "refresh" }, JWT_REFRESH_EXPIRES_IN);
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1e3 : 7 * 24 * 60 * 60 * 1e3
+        // 30 days or 7 days
+      };
+      res.cookie("authToken", accessToken, cookieOptions);
+      res.cookie("refreshToken", refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1e3 });
+      console.log("\u2705 Login successful for:", sanitizedEmail);
+      res.json({
+        success: true,
+        message: "Login effettuato con successo",
+        user: SecurityUtils.sanitizeUser(user),
+        tokens: {
+          accessToken,
+          refreshToken
+        }
+      });
+    } catch (error) {
+      console.error("\u{1F4A5} Login error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "Dati non validi",
+          details: error.errors.map((e) => e.message).join(", ")
         });
-        const usersToRemove = sortedUsers.slice(0, Math.floor(MAX_MOCK_USERS * 0.2));
-        usersToRemove.forEach(([id]) => {
-          mockUsers.delete(id);
-        });
-        console.log(`\u{1F9F9} Emergency cleanup: removed ${usersToRemove.length} users`);
       }
-      const hashedPassword = await hashPassword(password);
-      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      res.status(500).json({ error: "Errore interno del server" });
+    }
+  });
+  app2.post("/api/auth/register", registerRateLimit, async (req, res) => {
+    try {
+      console.log("\u{1F4DD} Registration attempt for:", req.body?.email);
+      const validatedData = registerSchema.parse(req.body);
+      const { email, password, firstName, lastName } = validatedData;
+      const sanitizedEmail = validator.normalizeEmail(email) || email.toLowerCase();
+      const sanitizedFirstName = validator.escape(firstName.trim());
+      const sanitizedLastName = validator.escape(lastName.trim());
+      const existingUser = Array.from(mockUsers.values()).find((u) => u.email === sanitizedEmail);
+      if (existingUser) {
+        console.log("\u274C User already exists:", sanitizedEmail);
+        return res.status(409).json({ error: "Un utente con questa email esiste gi\xE0" });
+      }
+      if (mockUsers.size >= MAX_USERS) {
+        console.warn("\u26A0\uFE0F User limit reached, cleaning up...");
+        const users2 = Array.from(mockUsers.entries()).sort(([, a], [, b]) => a.createdAt.getTime() - b.createdAt.getTime()).slice(0, Math.floor(MAX_USERS * 0.5));
+        mockUsers.clear();
+        users2.forEach(([id, user]) => mockUsers.set(id, user));
+      }
+      const hashedPassword = await SecurityUtils.hashPassword(password);
+      const userId = SecurityUtils.generateUserId();
       const newUser = {
         id: userId,
-        email: email.toLowerCase(),
-        // ✅ Normalize email
+        email: sanitizedEmail,
         password: hashedPassword,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        profileImageUrl: null,
-        phone: null,
-        bio: null,
-        shippingAddress: {},
-        paymentMethod: {},
-        provider: "email",
-        providerId: null,
+        firstName: sanitizedFirstName,
+        lastName: sanitizedLastName,
         isAdmin: false,
         emailVerified: false,
+        lastLoginAt: /* @__PURE__ */ new Date(),
         createdAt: /* @__PURE__ */ new Date(),
-        updatedAt: /* @__PURE__ */ new Date()
+        updatedAt: /* @__PURE__ */ new Date(),
+        loginAttempts: 0
       };
       mockUsers.set(userId, newUser);
-      console.log("\u2705 User registered and saved:", userId);
-      req.login(newUser, (err) => {
-        if (err) {
-          console.error("\u{1F4A5} Auto-login error after registration:", err);
-          const { password: _2, ...userResponse2 } = newUser;
-          return res.status(201).json({
-            message: "Registrazione completata con successo. Effettua il login.",
-            user: userResponse2,
-            autoLogin: false
-          });
+      const accessToken = SecurityUtils.generateToken({ userId });
+      const refreshToken = SecurityUtils.generateToken({ userId, type: "refresh" }, JWT_REFRESH_EXPIRES_IN);
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1e3
+        // 7 days
+      };
+      res.cookie("authToken", accessToken, cookieOptions);
+      res.cookie("refreshToken", refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1e3 });
+      console.log("\u2705 Registration successful for:", sanitizedEmail);
+      res.status(201).json({
+        success: true,
+        message: "Registrazione completata con successo",
+        user: SecurityUtils.sanitizeUser(newUser),
+        tokens: {
+          accessToken,
+          refreshToken
         }
-        console.log("\u2705 Registration and auto-login successful");
-        const { password: _, ...userResponse } = newUser;
-        return res.status(201).json({
-          message: "Registrazione completata con successo",
-          user: userResponse,
-          autoLogin: true
-        });
       });
     } catch (error) {
       console.error("\u{1F4A5} Registration error:", error);
-      console.error("\u{1F4A5} Error details:", {
-        message: error.message,
-        stack: error.stack,
-        body: req.body
-      });
-      return res.status(500).json({
-        message: "Errore durante la registrazione",
-        error: process.env.NODE_ENV === "development" ? error.message : void 0
-      });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "Dati non validi",
+          details: error.errors.map((e) => e.message).join(", ")
+        });
+      }
+      res.status(500).json({ error: "Errore interno del server" });
     }
   });
-  app2.post("/api/login", (req, res, next) => {
-    console.log("\u{1F510} Login endpoint called with:", { email: req.body?.email });
-    passport.authenticate("local", (err, user, info) => {
-      if (err) {
-        console.error("\u{1F4A5} Passport authentication error:", err);
-        return res.status(500).json({ message: "Errore del server durante l'autenticazione" });
+  app2.get("/api/auth/me", authenticate, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Non autenticato" });
+    }
+    res.json(SecurityUtils.sanitizeUser(req.user));
+  });
+  app2.post("/api/auth/logout", (req, res) => {
+    res.clearCookie("authToken");
+    res.clearCookie("refreshToken");
+    console.log("\u2705 Logout successful");
+    res.json({ success: true, message: "Logout effettuato con successo" });
+  });
+  app2.post("/api/auth/refresh", async (req, res) => {
+    try {
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+      if (!refreshToken) {
+        return res.status(401).json({ error: "Refresh token mancante" });
       }
+      const decoded = SecurityUtils.verifyToken(refreshToken);
+      if (decoded.type !== "refresh") {
+        return res.status(401).json({ error: "Token type non valido" });
+      }
+      const user = mockUsers.get(decoded.userId);
       if (!user) {
-        console.log("\u274C Login failed:", info?.message);
-        return res.status(401).json({
-          message: info?.message || "Credenziali non valide",
-          success: false
-        });
+        return res.status(401).json({ error: "Utente non trovato" });
       }
-      console.log("\u{1F510} User found, attempting session login for:", user.email);
-      req.login(user, (err2) => {
-        if (err2) {
-          console.error("\u{1F4A5} Session login error:", err2);
-          return res.status(500).json({ message: "Errore nella creazione della sessione" });
-        }
-        console.log("\u2705 Login successful, user authenticated:", user.email);
-        console.log("\u{1F50D} Session info:", {
-          sessionId: req.sessionID,
-          isAuthenticated: req.isAuthenticated(),
-          userId: req.user?.id
-        });
-        const { password: _, ...userResponse } = user;
-        res.json({
-          ...userResponse,
-          success: true
-        });
+      const newAccessToken = SecurityUtils.generateToken({ userId: user.id });
+      res.cookie("authToken", newAccessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1e3
       });
-    })(req, res, next);
-  });
-  app2.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
-      if (err) {
-        console.error("\u{1F4A5} Logout error:", err);
-        return res.status(500).json({ message: "Errore durante il logout" });
-      }
-      req.session.destroy((err2) => {
-        if (err2) {
-          console.error("\u{1F4A5} Session destroy error:", err2);
-        }
-        res.clearCookie("gameall.session");
-        res.json({ message: "Logout effettuato con successo" });
-      });
-    });
-  });
-  app2.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Non autenticato" });
-    }
-    const { password: _, ...userResponse } = req.user;
-    res.json(userResponse);
-  });
-  app2.get("/api/debug/users", (req, res) => {
-    const users2 = Array.from(mockUsers.values()).map((user) => {
-      const { password: _, ...userWithoutPassword } = user;
-      return userWithoutPassword;
-    });
-    res.json({
-      totalUsers: users2.length,
-      users: users2,
-      environment: process.env.NODE_ENV
-    });
-  });
-  app2.post("/api/test-register", async (req, res) => {
-    try {
-      const testUser = {
-        email: "test@example.com",
-        password: "test123",
-        firstName: "Test",
-        lastName: "User"
-      };
-      const hashedPassword = await hashPassword(testUser.password);
-      const userId = `test_${Date.now()}`;
-      const newUser = {
-        id: userId,
-        email: testUser.email,
-        password: hashedPassword,
-        firstName: testUser.firstName,
-        lastName: testUser.lastName,
-        profileImageUrl: null,
-        phone: null,
-        bio: null,
-        shippingAddress: {},
-        paymentMethod: {},
-        provider: "email",
-        providerId: null,
-        isAdmin: false,
-        emailVerified: false,
-        createdAt: /* @__PURE__ */ new Date(),
-        updatedAt: /* @__PURE__ */ new Date()
-      };
-      mockUsers.set(userId, newUser);
-      const { password: _, ...userResponse } = newUser;
-      res.status(201).json({
-        message: "Test user created successfully",
-        user: userResponse
-      });
-    } catch (error) {
-      console.error("\u{1F4A5} Test registration error:", error);
-      res.status(500).json({
-        message: "Test registration failed",
-        error: error.message
-      });
-    }
-  });
-  app2.post("/api/cleanup-users", (req, res) => {
-    try {
-      const beforeCount = mockUsers.size;
-      mockUsers.clear();
-      console.log(`\u{1F9F9} Manual cleanup: removed ${beforeCount} users`);
       res.json({
-        message: "Mock users cleaned up successfully",
-        removedCount: beforeCount
+        success: true,
+        accessToken: newAccessToken,
+        user: SecurityUtils.sanitizeUser(user)
       });
     } catch (error) {
-      console.error("\u{1F4A5} Cleanup error:", error);
-      res.status(500).json({
-        message: "Cleanup failed",
-        error: error.message
-      });
+      console.error("\u{1F4A5} Refresh token error:", error);
+      res.status(401).json({ error: "Refresh token non valido" });
     }
   });
+  app2.get("/api/auth/stats", authenticate, (req, res) => {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ error: "Accesso negato" });
+    }
+    const stats = {
+      totalUsers: mockUsers.size,
+      maxUsers: MAX_USERS,
+      lockedAccounts: Array.from(mockUsers.values()).filter(SecurityUtils.isAccountLocked).length,
+      recentRegistrations: Array.from(mockUsers.values()).filter((u) => u.createdAt > new Date(Date.now() - 24 * 60 * 60 * 1e3)).length
+    };
+    res.json(stats);
+  });
+  console.log("\u{1F510} Auth system initialized with ultra-modern security");
 }
 
 // server/routes.ts
 init_schema();
 
 // server/middleware/security.ts
-import { z } from "zod";
+import { z as z2 } from "zod";
 var rateLimitMap = /* @__PURE__ */ new Map();
-var rateLimit = (windowMs, max) => {
+var rateLimit2 = (windowMs, max) => {
   return (req, res, next) => {
     const clientIp = req.ip || req.socket.remoteAddress || "unknown";
     const now = Date.now();
@@ -1202,7 +1127,7 @@ var validateRequest = (schema) => {
       schema.parse(req.body);
       next();
     } catch (error) {
-      if (error instanceof z.ZodError) {
+      if (error instanceof z2.ZodError) {
         return res.status(400).json({
           message: "Dati non validi",
           errors: error.errors.map((e) => ({
@@ -1490,7 +1415,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/products",
-    rateLimit(60 * 1e3, 10),
+    rateLimit2(60 * 1e3, 10),
     // 10 requests per minute
     upload.single("image"),
     handleUploadError,
@@ -1522,7 +1447,7 @@ async function registerRoutes(app2) {
   );
   app2.put(
     "/api/products/:id",
-    rateLimit(60 * 1e3, 15),
+    rateLimit2(60 * 1e3, 15),
     // 15 requests per minute
     upload.single("image"),
     handleUploadError,
@@ -1732,7 +1657,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/categories",
-    rateLimit(60 * 1e3, 5),
+    rateLimit2(60 * 1e3, 5),
     upload.single("image"),
     handleUploadError,
     sanitizeHtml,
@@ -1760,7 +1685,7 @@ async function registerRoutes(app2) {
   );
   app2.put(
     "/api/categories/:id",
-    rateLimit(60 * 1e3, 10),
+    rateLimit2(60 * 1e3, 10),
     upload.single("image"),
     handleUploadError,
     sanitizeHtml,
@@ -1836,7 +1761,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/reviews",
-    rateLimit(60 * 1e3, 5),
+    rateLimit2(60 * 1e3, 5),
     sanitizeHtml,
     isAuthenticated,
     verifyCaptcha,
@@ -1855,7 +1780,7 @@ async function registerRoutes(app2) {
   );
   app2.put(
     "/api/reviews/:id",
-    rateLimit(60 * 1e3, 10),
+    rateLimit2(60 * 1e3, 10),
     sanitizeHtml,
     isAuthenticated,
     validateRequest(insertReviewSchema.partial()),
@@ -1906,7 +1831,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/wishlist",
-    rateLimit(60 * 1e3, 20),
+    rateLimit2(60 * 1e3, 20),
     isAuthenticated,
     validateRequest(insertWishlistSchema),
     async (req, res) => {
@@ -1948,7 +1873,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/coupons/validate",
-    rateLimit(60 * 1e3, 10),
+    rateLimit2(60 * 1e3, 10),
     isAuthenticated,
     async (req, res) => {
       try {
@@ -1975,7 +1900,7 @@ async function registerRoutes(app2) {
   );
   app2.post(
     "/api/coupons",
-    rateLimit(60 * 1e3, 5),
+    rateLimit2(60 * 1e3, 5),
     sanitizeHtml,
     isAuthenticated,
     requireAdmin,
@@ -1993,7 +1918,7 @@ async function registerRoutes(app2) {
   );
   app2.put(
     "/api/coupons/:id",
-    rateLimit(60 * 1e3, 10),
+    rateLimit2(60 * 1e3, 10),
     sanitizeHtml,
     isAuthenticated,
     requireAdmin,
@@ -2031,7 +1956,7 @@ async function registerRoutes(app2) {
   });
   app2.post(
     "/api/notifications",
-    rateLimit(60 * 1e3, 30),
+    rateLimit2(60 * 1e3, 30),
     sanitizeHtml,
     isAuthenticated,
     validateRequest(insertNotificationSchema),
@@ -2261,7 +2186,7 @@ app.use((req, res, next) => {
   res.removeHeader("X-Powered-By");
   next();
 });
-app.use(helmet());
+app.use(helmet2());
 app.use(cors({
   origin: process.env.NODE_ENV === "production" ? [
     "https://gamesall.top",
@@ -2318,6 +2243,7 @@ app.use((req, res, next) => {
 });
 (async () => {
   try {
+    setupAuth(app);
     const server = await registerRoutes(app);
     if (app.get("env") === "development") {
       await setupVite(app, server);

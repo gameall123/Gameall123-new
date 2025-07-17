@@ -156,5 +156,4 @@ export const queryClient = new QueryClient({
   },
 });
 
-// ✅ Export apiRequest for use in hooks
-export { apiRequest };
+// ✅ apiRequest is already exported above as function export
