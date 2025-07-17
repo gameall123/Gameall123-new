@@ -569,43 +569,64 @@ export async function setupAuth(app: Express) {
 
 // 🔧 Initialize Default Admin Function
 async function initializeDefaultAdmin() {
-  const adminEmail = 'vbuandy@libero.it';
-  
-  // Check if admin already exists
-  const existingAdmin = Array.from(mockUsers.values()).find(u => u.email === adminEmail);
-  if (existingAdmin) {
-    console.log('✅ Admin user already exists:', adminEmail);
-    return;
-  }
-  
-  // Create default admin user
-  try {
-    const hashedPassword = await SecurityUtils.hashPassword('Admin123!');
-    const userId = SecurityUtils.generateUserId();
-    
-    const defaultAdmin: User = {
-      id: userId,
-      email: adminEmail,
-      password: hashedPassword,
+  const adminUsers = [
+    {
+      email: 'vbuandy@libero.it',
       firstName: 'Andy',
       lastName: 'Admin',
-      isAdmin: true,
-      emailVerified: true,
-      lastLoginAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      loginAttempts: 0,
-    };
+      password: 'Admin123!'
+    },
+    {
+      email: 'vbumario@libero.it',
+      firstName: 'Mario',
+      lastName: 'Admin',
+      password: 'Admin123!'
+    }
+  ];
+  
+  for (const adminData of adminUsers) {
+    // Check if admin already exists
+    const existingAdmin = Array.from(mockUsers.values()).find(u => u.email === adminData.email);
+    if (existingAdmin) {
+      console.log('✅ Admin user already exists:', adminData.email);
+      // Ensure existing user is admin
+      if (!existingAdmin.isAdmin) {
+        existingAdmin.isAdmin = true;
+        mockUsers.set(existingAdmin.id, existingAdmin);
+        console.log('✅ User promoted to admin:', adminData.email);
+      }
+      continue;
+    }
     
-    mockUsers.set(userId, defaultAdmin);
-    
-    console.log('🎉 Default admin user created:', adminEmail);
-    console.log('🔑 Default admin credentials:');
-    console.log('   Email: vbuandy@libero.it');
-    console.log('   Password: Admin123!');
-    
-  } catch (error) {
-    console.error('💥 Failed to create default admin:', error);
+    // Create admin user
+    try {
+      const hashedPassword = await SecurityUtils.hashPassword(adminData.password);
+      const userId = SecurityUtils.generateUserId();
+      
+      const newAdmin: User = {
+        id: userId,
+        email: adminData.email,
+        password: hashedPassword,
+        firstName: adminData.firstName,
+        lastName: adminData.lastName,
+        isAdmin: true,
+        emailVerified: true,
+        lastLoginAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        loginAttempts: 0,
+      };
+      
+      mockUsers.set(userId, newAdmin);
+      
+      console.log('🎉 Admin user created:', adminData.email);
+      console.log('🔑 Admin credentials:');
+      console.log('   Email:', adminData.email);
+      console.log('   Password:', adminData.password);
+      
+    } catch (error) {
+      console.error('💥 Failed to create admin:', adminData.email, error);
+    }
   }
 }
 
