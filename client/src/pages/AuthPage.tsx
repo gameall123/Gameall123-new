@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -209,9 +209,17 @@ export default function AuthPage() {
   // 📝 Handle Register
   const handleRegister = async (data: RegisterForm) => {
     try {
+      // Debug per verificare i dati del form
+      console.log('🔍 Register form data:', {
+        ...data,
+        password: '[HIDDEN]',
+        confirmPassword: '[HIDDEN]'
+      });
+      
       await register(data);
     } catch (error) {
       // Error handling è gestito nel hook
+      console.error('❌ Registration error:', error);
     }
   };
 
@@ -371,9 +379,16 @@ export default function AuthPage() {
 
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
-                          <Checkbox 
-                            id="rememberMe"
-                            {...loginForm.register('rememberMe')}
+                          <Controller
+                            name="rememberMe"
+                            control={loginForm.control}
+                            render={({ field }) => (
+                              <Checkbox 
+                                id="rememberMe"
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            )}
                           />
                           <Label htmlFor="rememberMe" className="text-sm">
                             Ricordami
@@ -477,18 +492,40 @@ export default function AuthPage() {
                         error={registerForm.formState.errors.confirmPassword?.message}
                       />
 
-                      <div className="flex items-start space-x-2">
-                        <Checkbox 
-                          id="acceptTerms"
-                          {...registerForm.register('acceptTerms')}
+                      <div className={`flex items-start space-x-2 p-3 rounded-lg border transition-colors ${
+                        registerForm.formState.errors.acceptTerms 
+                          ? 'border-red-300 bg-red-50 dark:bg-red-900/10' 
+                          : 'border-gray-200 dark:border-gray-700'
+                      }`}>
+                        <Controller
+                          name="acceptTerms"
+                          control={registerForm.control}
+                          render={({ field }) => (
+                            <Checkbox 
+                              id="acceptTerms"
+                              checked={field.value || false}
+                              onCheckedChange={field.onChange}
+                              className={registerForm.formState.errors.acceptTerms ? 'border-red-500' : ''}
+                            />
+                          )}
                         />
-                        <Label htmlFor="acceptTerms" className="text-sm leading-relaxed">
+                        <Label htmlFor="acceptTerms" className="text-sm leading-relaxed cursor-pointer">
                           Accetto i{' '}
-                          <a href="/terms" className="text-blue-600 hover:underline">
+                          <a 
+                            href="/terms" 
+                            target="_blank"
+                            className="text-blue-600 hover:text-blue-800 underline font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             termini e condizioni
                           </a>
                           {' '}e la{' '}
-                          <a href="/privacy" className="text-blue-600 hover:underline">
+                          <a 
+                            href="/privacy" 
+                            target="_blank"
+                            className="text-blue-600 hover:text-blue-800 underline font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             privacy policy
                           </a>
                         </Label>
