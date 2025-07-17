@@ -42,3 +42,8 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+# Compiled files
+build
+*.js
+!postcss.config.js
+!vite.config.ts
