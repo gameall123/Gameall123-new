@@ -29,7 +29,7 @@ const isAuthenticated = (req: any, res: any, next: any) => {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
-  setupAuth(app);
+  await setupAuth(app);
 
   // Auth page route - serve the React app for /auth
   app.get("/auth", (_req, res) => {

@@ -181,7 +181,7 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
 };
 
 // 🚀 Setup Auth Routes Ultra Moderno
-export function setupAuth(app: Express) {
+export async function setupAuth(app: Express) {
   // 🛡️ Security Headers
   app.use(helmet({
     contentSecurityPolicy: {
@@ -377,6 +377,67 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // 🔧 Admin Creation Endpoint
+  app.post('/api/auth/create-admin', async (req: Request, res: Response) => {
+    try {
+      const { email, password, firstName, lastName, adminSecret } = req.body;
+      
+      // Check admin secret (simple protection)
+      if (adminSecret !== 'gameall-admin-2024') {
+        return res.status(403).json({ error: 'Secret admin non valido' });
+      }
+      
+      const sanitizedEmail = email.toLowerCase().trim();
+      
+      // Check if user already exists
+      const existingUser = Array.from(mockUsers.values()).find(u => u.email === sanitizedEmail);
+      if (existingUser) {
+        // If user exists, just make them admin
+        existingUser.isAdmin = true;
+        mockUsers.set(existingUser.id, existingUser);
+        
+        console.log('✅ User promoted to admin:', sanitizedEmail);
+        return res.json({
+          success: true,
+          message: 'Utente promosso ad amministratore',
+          user: SecurityUtils.sanitizeUser(existingUser)
+        });
+      }
+      
+      // Create new admin user
+      const hashedPassword = await SecurityUtils.hashPassword(password || 'Admin123!');
+      const userId = SecurityUtils.generateUserId();
+      
+      const newAdmin: User = {
+        id: userId,
+        email: sanitizedEmail,
+        password: hashedPassword,
+        firstName: firstName || 'Admin',
+        lastName: lastName || 'User',
+        isAdmin: true, // 👑 This is the key part
+        emailVerified: true,
+        lastLoginAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        loginAttempts: 0,
+      };
+      
+      mockUsers.set(userId, newAdmin);
+      
+      console.log('🎉 New admin user created:', sanitizedEmail);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Amministratore creato con successo',
+        user: SecurityUtils.sanitizeUser(newAdmin)
+      });
+      
+    } catch (error) {
+      console.error('💥 Admin creation error:', error);
+      res.status(500).json({ error: 'Errore nella creazione admin' });
+    }
+  });
+
   // 👤 Get Current User
   app.get('/api/auth/me', authenticate, (req: AuthenticatedRequest, res: Response) => {
     if (!req.user) {
@@ -501,6 +562,51 @@ export function setupAuth(app: Express) {
   });
 
   console.log('🔐 Auth system initialized with ultra-modern security');
+  
+  // 🔧 Initialize default admin user
+  await initializeDefaultAdmin();
+}
+
+// 🔧 Initialize Default Admin Function
+async function initializeDefaultAdmin() {
+  const adminEmail = 'vbuandy@libero.it';
+  
+  // Check if admin already exists
+  const existingAdmin = Array.from(mockUsers.values()).find(u => u.email === adminEmail);
+  if (existingAdmin) {
+    console.log('✅ Admin user already exists:', adminEmail);
+    return;
+  }
+  
+  // Create default admin user
+  try {
+    const hashedPassword = await SecurityUtils.hashPassword('Admin123!');
+    const userId = SecurityUtils.generateUserId();
+    
+    const defaultAdmin: User = {
+      id: userId,
+      email: adminEmail,
+      password: hashedPassword,
+      firstName: 'Andy',
+      lastName: 'Admin',
+      isAdmin: true,
+      emailVerified: true,
+      lastLoginAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      loginAttempts: 0,
+    };
+    
+    mockUsers.set(userId, defaultAdmin);
+    
+    console.log('🎉 Default admin user created:', adminEmail);
+    console.log('🔑 Default admin credentials:');
+    console.log('   Email: vbuandy@libero.it');
+    console.log('   Password: Admin123!');
+    
+  } catch (error) {
+    console.error('💥 Failed to create default admin:', error);
+  }
 }
 
 // Export middleware per altri moduli

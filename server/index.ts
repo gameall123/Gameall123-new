@@ -109,7 +109,7 @@ app.use((req, res, next) => {
 (async () => {
   try {
     // 🔐 Setup ultra-modern auth system
-    setupAuth(app);
+    await setupAuth(app);
     
     const server = await registerRoutes(app);
 
