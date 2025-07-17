@@ -179,7 +179,7 @@ export default function AuthPage() {
     
     setOnLoginSuccess(handleNavigationAfterLogin);
     
-    return () => setOnLoginSuccess(() => {});
+    return () => setOnLoginSuccess(undefined);
   }, [setLocation, setOnLoginSuccess]);
   
   // 🔄 Redirect se già autenticato

@@ -90,14 +90,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('✅ Frontend: User authenticated:', userData.email);
         return userData;
       } catch (error) {
-        console.warn('⚠️ Frontend: Auth check error:', error instanceof Error ? error.message : "Unknown error");
+        console.warn('⚠️ Frontend: Auth check error:', error.message);
         
         // Debug: Check if we have cookies/tokens
         const hasAuthCookie = document.cookie.includes('authToken');
         console.log('🔍 Frontend Debug:', {
           hasAuthCookie,
           cookieCount: document.cookie.split(';').length,
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error.message
         });
         
         return null;
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'Network error' }));
-        throw new Error(error instanceof Error ? error.message : "Unknown error" || 'Login failed');
+        throw new Error(error.message || 'Login failed');
       }
       
       return await response.json();
@@ -150,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onError: (error: Error) => {
       toast({
         title: '❌ Errore di Login',
-        description: error instanceof Error ? error.message : "Unknown error" || 'Credenziali non valide',
+        description: error.message || 'Credenziali non valide',
         variant: 'destructive',
         duration: 5000,
       });
@@ -178,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'Network error' }));
-        throw new Error(error instanceof Error ? error.message : "Unknown error" || 'Registration failed');
+        throw new Error(error.message || 'Registration failed');
       }
       
       return await response.json();
@@ -205,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onError: (error: Error) => {
       toast({
         title: '❌ Errore di Registrazione',
-        description: error instanceof Error ? error.message : "Unknown error" || 'Si è verificato un errore durante la registrazione',
+        description: error.message || 'Si è verificato un errore durante la registrazione',
         variant: 'destructive',
         duration: 5000,
       });
@@ -265,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: loginMutation.mutateAsync,
     register: registerMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
-    refreshUser: async () => { await refreshUser(); },
+    refreshUser,
     
     // Loading states
     isLoggingIn: loginMutation.isPending,
