@@ -19,13 +19,8 @@ import { z } from "zod";
 import path from "path";
 import express from "express";
 
-// Authentication middleware
-const isAuthenticated = (req: any, res: any, next: any) => {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  return res.status(401).json({ message: "Non autenticato" });
-};
+// Import new authentication middleware
+import { authenticate } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -112,7 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/captcha', getCaptcha);
 
   // User profile update route
-  app.put('/api/user', isAuthenticated, sanitizeHtml, async (req: any, res) => {
+  app.put('/api/user', authenticate, sanitizeHtml, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const updateData = {
@@ -160,7 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     upload.single('image'),
     handleUploadError,
     sanitizeHtml,
-    isAuthenticated, 
+    authenticate, 
     requireAdmin,
     verifyCaptcha,
     async (req: any, res: Response) => {
@@ -193,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     upload.single('image'),
     handleUploadError,
     sanitizeHtml,
-    isAuthenticated, 
+    authenticate, 
     requireAdmin,
     async (req: any, res: Response) => {
       try {
@@ -245,7 +240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.delete("/api/products/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/products/:id", authenticate, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user?.isAdmin) {
@@ -262,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Cart routes
-  app.get("/api/cart", isAuthenticated, async (req: any, res) => {
+  app.get("/api/cart", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const cartItems = await storage.getCartItems(userId);
@@ -273,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cart", isAuthenticated, async (req: any, res) => {
+  app.post("/api/cart", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const cartItemData = insertCartItemSchema.parse({
@@ -288,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/cart/:id", isAuthenticated, async (req: any, res) => {
+  app.put("/api/cart/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const { quantity } = req.body;
@@ -300,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/cart/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/cart/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.removeFromCart(id);
@@ -312,7 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Order routes
-  app.get("/api/orders", isAuthenticated, async (req: any, res) => {
+  app.get("/api/orders", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const user = await storage.getUser(userId);
@@ -331,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/orders", isAuthenticated, async (req: any, res) => {
+  app.post("/api/orders", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const orderData = insertOrderSchema.parse({
@@ -364,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/orders/:id/status", isAuthenticated, async (req: any, res) => {
+  app.put("/api/orders/:id/status", authenticate, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user?.isAdmin) {
@@ -382,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
-  app.get("/api/admin/stats", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/stats", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const stats = await storage.getDashboardStats();
       res.json(stats);
@@ -392,7 +387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/users", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/users", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users);
@@ -402,7 +397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/orders", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/orders", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const orders = await storage.getRecentOrders();
       res.json(orders);
@@ -412,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/reviews", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.get("/api/admin/reviews", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const reviews = await storage.getReviews();
       res.json(reviews);
@@ -438,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     upload.single('image'),
     handleUploadError,
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     requireAdmin,
     verifyCaptcha,
     async (req: any, res: Response) => {
@@ -467,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     upload.single('image'),
     handleUploadError,
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     requireAdmin,
     async (req: any, res: Response) => {
       try {
@@ -508,7 +503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.delete("/api/categories/:id", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.delete("/api/categories/:id", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const category = await storage.getCategory(id);
@@ -552,7 +547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/reviews", 
     rateLimit(60 * 1000, 5),
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     verifyCaptcha,
     validateRequest(insertReviewSchema),
     async (req: any, res) => {
@@ -571,7 +566,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/reviews/:id", 
     rateLimit(60 * 1000, 10),
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     validateRequest(insertReviewSchema.partial()),
     async (req: any, res) => {
       try {
@@ -596,7 +591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.delete("/api/reviews/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/reviews/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = req.user.id;
@@ -619,7 +614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Wishlist routes
-  app.get("/api/wishlist", isAuthenticated, async (req: any, res) => {
+  app.get("/api/wishlist", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const wishlist = await storage.getWishlist(userId);
@@ -632,7 +627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/wishlist", 
     rateLimit(60 * 1000, 20),
-    isAuthenticated,
+    authenticate,
     validateRequest(insertWishlistSchema),
     async (req: any, res) => {
       try {
@@ -647,7 +642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.delete("/api/wishlist/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/wishlist/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = req.user.id;
@@ -669,7 +664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Coupon routes
-  app.get("/api/coupons", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.get("/api/coupons", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const coupons = await storage.getCoupons();
       res.json(coupons);
@@ -681,7 +676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/coupons/validate", 
     rateLimit(60 * 1000, 10),
-    isAuthenticated,
+    authenticate,
     async (req: any, res) => {
       try {
         const { code } = req.body;
@@ -714,7 +709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/coupons", 
     rateLimit(60 * 1000, 5),
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     requireAdmin,
     verifyCaptcha,
     validateRequest(insertCouponSchema),
@@ -732,7 +727,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/coupons/:id", 
     rateLimit(60 * 1000, 10),
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     requireAdmin,
     validateRequest(insertCouponSchema.partial()),
     async (req: any, res) => {
@@ -747,7 +742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.delete("/api/coupons/:id", isAuthenticated, requireAdmin, async (req: any, res) => {
+  app.delete("/api/coupons/:id", authenticate, requireAdmin, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteCoupon(id);
@@ -759,7 +754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Notification routes
-  app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
+  app.get("/api/notifications", authenticate, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const notifications = await storage.getNotifications(userId);
@@ -773,7 +768,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/notifications", 
     rateLimit(60 * 1000, 30),
     sanitizeHtml,
-    isAuthenticated,
+    authenticate,
     validateRequest(insertNotificationSchema),
     async (req: any, res) => {
       try {
@@ -786,7 +781,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-  app.put("/api/notifications/:id/read", isAuthenticated, async (req: any, res) => {
+  app.put("/api/notifications/:id/read", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = req.user.id;
@@ -807,7 +802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/notifications/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/notifications/:id", authenticate, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const userId = req.user.id;
@@ -828,7 +823,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/top-products", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/top-products", authenticate, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user?.isAdmin) {
@@ -843,7 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/recent-orders", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/recent-orders", authenticate, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user?.isAdmin) {
