@@ -25,8 +25,32 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: Error): State {
+    // ✅ Skip Error Boundary for certain non-critical errors
+    const errorMessage = error?.message?.toLowerCase() || '';
+    const errorStack = error?.stack?.toLowerCase() || '';
+    
+    // Don't trigger Error Boundary for common auth-related errors
+    if (
+      errorMessage.includes('non autenticato') ||
+      errorMessage.includes('401') ||
+      errorMessage.includes('unauthorized') ||
+      errorMessage.includes('authentication') ||
+      errorStack.includes('auth') ||
+      errorStack.includes('login')
+    ) {
+      console.warn('🔐 Auth-related error caught but not showing Error Boundary:', error.message);
+      return {
+        hasError: false,
+        error: null,
+        errorInfo: null,
+        errorId: null,
+      };
+    }
+    
     // Generate unique error ID for tracking
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.error('🚨 Error Boundary triggered with ID:', errorId, error);
     
     return {
       hasError: true,
@@ -38,6 +62,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('🚨 Error Boundary caught an error:', error, errorInfo);
+    
+    // ✅ Enhanced error logging for better debugging
+    console.error('🚨 Error details:', {
+      errorId: this.state.errorId,
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      url: window.location.href,
+    });
     
     this.setState({
       error,
@@ -63,6 +98,9 @@ export class ErrorBoundary extends Component<Props, State> {
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
       url: window.location.href,
+      // ✅ Additional context for debugging
+      props: this.props,
+      state: this.state,
     };
 
     console.log('📊 Error report:', errorReport);
@@ -96,6 +134,9 @@ Stack: ${this.state.error?.stack}
 URL: ${window.location.href}
 User Agent: ${navigator.userAgent}
 Timestamp: ${new Date().toISOString()}
+
+Component Stack:
+${this.state.errorInfo?.componentStack || 'N/A'}
     `);
     
     // ✅ Open email client or bug reporting system
