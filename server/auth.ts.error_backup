@@ -67,7 +67,7 @@ class SecurityUtils {
   }
 
   static generateToken(payload: any, expiresIn: string = JWT_EXPIRES_IN): string {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
   }
 
   static verifyToken(token: string): any {
@@ -453,7 +453,7 @@ export async function setupAuth(app: Express) {
     const authHeader = req.headers.authorization;
     const authToken = req.cookies?.authToken;
     
-    const debugInfo = {
+    const debugInfo: any = {
       timestamp: new Date().toISOString(),
       cookies: {
         hasAuthToken: !!authToken,

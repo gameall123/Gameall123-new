@@ -130,7 +130,7 @@ export async function setupAuth(app: Express) {
     };
     updateUserSession(user, tokens);
     await upsertUser(claims);
-    verified(null, { ...user, lastLoginAt: new Date(), loginAttempts: 0 });
+    verified(null, user);
   };
 
   for (const domain of process.env

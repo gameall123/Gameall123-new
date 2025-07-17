@@ -3,7 +3,7 @@ declare global {
     interface User {
       id: string;
       email: string;
-      password: string;
+      password?: string;
       firstName: string;
       lastName: string;
       avatar?: string;
@@ -19,6 +19,8 @@ declare global {
       profileImageUrl?: string;
       shippingAddress?: any;
       paymentMethod?: any;
+      provider?: string;
+      providerId?: string;
     }
 
     interface Request {
@@ -26,5 +28,4 @@ declare global {
     }
   }
 }
-
 export {};
